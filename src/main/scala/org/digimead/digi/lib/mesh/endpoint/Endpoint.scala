@@ -36,7 +36,7 @@ abstract class Endpoint(
   /** for example MAC or IMEI or IMSI or MEID number (depending on the device's technology) */
   val deviceIdentifier: String,
   /** transport level endpoint id */
-  val transportIdentifier: Endpoint.TransportIdentifiers,
+  val transportIdentifier: Endpoint.TransportIdentifier,
   /** hexapod container */
   val hexapod: WeakReference[AppHexapod],
   /** direction */
@@ -57,8 +57,8 @@ abstract class Endpoint(
 sealed trait EndpointEvent
 
 object Endpoint {
-  trait TransportIdentifiers {
-    override def toString = ""
+  trait TransportIdentifier {
+    override def toString = "EmptyTransportIdentifier"
   }
   object Priority extends Enumeration {
     val LOW = Value(10, "LOW")

@@ -24,6 +24,8 @@ import scala.collection.mutable.SynchronizedBuffer
 
 import org.digimead.digi.lib.log.Logging
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
+import org.digimead.digi.lib.mesh.message.DiffieHellmanReq
+import org.digimead.digi.lib.mesh.message.DiffieHellmanRes
 
 class Hub extends Hub.Interface with Logging {
   protected val pool = new ArrayBuffer[Hexapod] with SynchronizedBuffer[Hexapod]
@@ -42,6 +44,8 @@ object Hub extends Logging {
 
   def init(arg: Init): Unit = synchronized {
     assert(Mesh.isInitialized, "Mesh not initialized")
+    assert(DiffieHellmanReq.isInitialized, "DiffieHellmanReq not initialized")
+    assert(DiffieHellmanRes.isInitialized, "DiffieHellmanRes not initialized")
     log.debug("initialize hub with " + arg.implementation)
     implementation = arg.implementation
   }

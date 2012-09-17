@@ -18,51 +18,45 @@
 
 package org.digimead.digi.lib.mesh.endpoint
 
+import java.net.DatagramPacket
+import java.net.DatagramSocket
+import java.net.InetAddress
 import java.util.UUID
 
+import scala.Option.option2Iterable
+import scala.annotation.tailrec
 import scala.ref.WeakReference
 
+import org.digimead.digi.lib.aop.Loggable
 import org.digimead.digi.lib.log.Logging
 import org.digimead.digi.lib.log.NDC
 import org.digimead.digi.lib.mesh.Mesh
-import org.digimead.digi.lib.mesh.communication.Communication
-import org.digimead.digi.lib.mesh.communication.CommunicationEvent
 import org.digimead.digi.lib.mesh.communication.Message
 import org.digimead.digi.lib.mesh.hexapod.AppHexapod
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
 
-class LoopbackEndpoint(
+class UDPEndpoint(
   override val uuid: UUID,
   override val userIdentifier: String,
   override val deviceIdentifier: String,
-  override val transportIdentifier: Endpoint.TransportIdentifier,
+  override val transportIdentifier: UDPEndpoint.TransportIdentifier,
   override val hexapod: WeakReference[AppHexapod],
   override val direction: Endpoint.Direction)
   extends Endpoint(uuid, userIdentifier, deviceIdentifier, transportIdentifier, hexapod, direction) with Logging {
   log.debug("%s ids are %s [%s] [%s] [%s]".format(this, uuid, userIdentifier, deviceIdentifier, transportIdentifier))
-  @volatile var destination: Option[LoopbackEndpoint] = None
+  /** listen interface address, port */
+  @volatile protected var socket: Option[DatagramSocket] = None
+  @volatile protected var packet: Option[DatagramPacket] = None
+  @volatile protected var serverThread: Option[Thread] = None
+  protected val buffer = new Array[Byte](4096)
 
-  def loopbackConnect(endpoint: LoopbackEndpoint) = {
-    log.debug("connect %s to %s".format(this, endpoint))
-    destination = Some(endpoint)
-  }
   def send(message: Message, key: Option[BigInt]): Option[Endpoint] = for {
     destinationHexapod <- findDestination(message)
     hexapod <- hexapod.get
   } yield {
-    log.debug("send message %s to %s via %s".format(message, destinationHexapod, this))
-    val rawMessage = message.createRawMessage(hexapod, destinationHexapod, this, key)
-    val sub = new Communication.Sub {
-      def notify(pub: Communication.Pub, event: CommunicationEvent) = event match {
-        case Communication.Event.Active(passed_message) if passed_message == message =>
-          Communication.removeSubscription(this)
-          destination.foreach(_.receive(rawMessage))
-        case _ =>
-      }
-    }
-    Communication.subscribe(sub)
     this
   }
+  @Loggable
   def receive(message: Array[Byte]) = try {
     Message.parseRawMessage(message, this) match {
       case Some((message, remoteEndpointUUID)) =>
@@ -83,41 +77,60 @@ class LoopbackEndpoint(
     case e =>
       log.error(e.getMessage())
   }
-  def connect(): Boolean = {
-    log.debug("initiate fake connection sequence for " + this)
+  @Loggable
+  def connect(): Boolean = synchronized {
+    socket = transportIdentifier match {
+      case UDPEndpoint.TransportIdentifier(Some(bindaddr), Some(port)) =>
+        Some(new DatagramSocket(port, bindaddr))
+      case UDPEndpoint.TransportIdentifier(None, Some(port)) =>
+        Some(new DatagramSocket(port))
+      case UDPEndpoint.TransportIdentifier(_, None) =>
+        None
+    }
+    packet = socket.map(_ => new DatagramPacket(buffer, buffer.length))
+    serverThread = for {
+      socket <- socket
+      packet <- packet
+    } yield {
+      assert(direction == Endpoint.In || direction == Endpoint.InOut, "illegal server for Endpoint.Out direction")
+      val thread = new Thread("UDPEndpoint server at %s:%s".format(transportIdentifier.addr.getOrElse("0.0.0.0"), transportIdentifier.port.get)) {
+        log.info("bind %s to %s:%s".format(UDPEndpoint.this, transportIdentifier.addr.getOrElse("0.0.0.0"), transportIdentifier.port.get))
+        this.setDaemon(true)
+        @tailrec
+        override def run() = {
+          if (UDPEndpoint.this.serverThread.nonEmpty) {
+            socket.receive(packet)
+            log.debug("received packet from: " + packet.getAddress())
+            run
+          }
+        }
+      }
+      thread.start
+      thread
+    }
     connected = true
     publish(Endpoint.Event.Connect(this))
     true
   }
+  @Loggable
   def reconnect() {}
-  def disconnect() {
-    log.debug("initiate fake disconnection sequence for " + this)
+  @Loggable
+  def disconnect() = synchronized {
+    serverThread = None
+    socket.map(_.close())
     connected = false
     publish(Endpoint.Event.Disconnect(this))
   }
   private def findDestination(message: Message): Option[Hexapod] =
     message.destinationHexapod match {
       case Some(hexapodUUID) =>
-        this.destination match {
-          case Some(dep) =>
-            if (dep.hexapod.get.exists(_.uuid == hexapodUUID)) {
-              Mesh(hexapodUUID) match {
-                case Some(entity: Hexapod) =>
-                  Some(entity)
-                case entity =>
-                  log.fatal("broken reference " + entity + " for uuid " + hexapodUUID)
-                  None
-              }
-            } else {
-              log.debug("unable to send message to %s via %s".format(hexapodUUID, dep.hexapod.get))
-              None
-            }
-          case None =>
-            log.info("destination hexapod not found")
-            None
-        }
+        None
       case None =>
-        this.destination.flatMap(_.hexapod.get)
+        None
     }
-  override def toString = "LoopbackEndpoint[%08X/%08X/%s]".format(hexapod.get.map(_.hashCode).getOrElse(0), uuid.hashCode(), direction)
+  override def toString = "UDPEndpoint[%08X/%08X/%s]".format(hexapod.get.map(_.hashCode).getOrElse(0), uuid.hashCode(), direction)
+}
+
+object UDPEndpoint {
+  case class TransportIdentifier(addr: Option[InetAddress] = None, port: Option[Int] = None) extends Endpoint.TransportIdentifier
 }

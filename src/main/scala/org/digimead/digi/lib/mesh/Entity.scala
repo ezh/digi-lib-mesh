@@ -22,6 +22,7 @@ import java.util.UUID
 
 trait Entity {
   val uuid: UUID
+  assert(Mesh.isInitialized, "Mesh must be initialized")
   Mesh.register(this)
 
   /** dispose entity */

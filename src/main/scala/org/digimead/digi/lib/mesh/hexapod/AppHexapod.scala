@@ -29,13 +29,14 @@ import org.digimead.digi.lib.auth.DiffieHellman
 import org.digimead.digi.lib.mesh.communication.Communication
 import org.digimead.digi.lib.mesh.communication.Communication.communication2implementation
 import org.digimead.digi.lib.mesh.communication.Message
+import org.digimead.digi.lib.mesh.communication.Stimulus
 import org.digimead.digi.lib.mesh.endpoint.Endpoint
 import org.digimead.digi.lib.mesh.endpoint.EndpointEvent
 import org.digimead.digi.lib.mesh.message.DiffieHellmanReq
+import org.digimead.digi.lib.mesh.message.DiffieHellmanRes
 
 class AppHexapod(override val uuid: UUID) extends Hexapod.AppHexapod(uuid) {
   @volatile protected var endpoint = Seq[Endpoint]()
-  @volatile protected var authDiffieHellman: Option[DiffieHellman] = None
   protected val endpointSubscribers = new WeakHashMap[Endpoint, Endpoint#Sub] with SynchronizedMap[Endpoint, Endpoint#Sub]
   log.debug("alive %s %s".format(this, uuid))
 
@@ -54,29 +55,39 @@ class AppHexapod(override val uuid: UUID) extends Hexapod.AppHexapod(uuid) {
     endpointSubscribers(endpoint) = endpointSubscriber
   }
   def send(message: Message): Option[Endpoint] = {
-    if (!checkAuthExistsDH) {
-      log.debug("Diffie Hellman authentification data not found")
-      val p = DiffieHellman.randomPrime(128)
-      val g = 5
-      authDiffieHellman = Some(new DiffieHellman(g, p))
-      Communication.push(DiffieHellmanReq(authDiffieHellman.get.getPublicKey, g, p, uuid, None, None))
-      message.onMessageSentFailed
-      return None
-    }
-    if (!checkAuthExistsSessionKey && !message.isInstanceOf[DiffieHellmanReq]) {
-      log.debug("session key not found")
-      message.onMessageSentFailed
-      return None
+    log.debug("send " + message)
+    if (!message.isInstanceOf[DiffieHellmanReq] && !message.isInstanceOf[DiffieHellmanRes]) {
+      log.___glance("!!!!" + checkAuthExistsDH + checkAuthExistsSessionKey)
+      if (!checkAuthExistsDH) {
+        log.debug("Diffie Hellman authentification data not found, generate new")
+        val p = DiffieHellman.randomPrime(128)
+        val g = 5
+        authDiffieHellman = Some(new DiffieHellman(g, p))
+        Communication.push(DiffieHellmanReq(authDiffieHellman.get.getPublicKey, g, p, uuid, None, None))
+        Communication.fail(message)
+        return None
+      }
+      if (!checkAuthExistsSessionKey) {
+        log.debug("session key not found")
+        Communication.fail(message)
+        return None
+      }
     }
     val bestEndpoint = endpoint.filter(ep =>
       ep.connected &&
         (ep.direction == Endpoint.Out || ep.direction == Endpoint.InOut)).sortBy(_.priority).headOption
     bestEndpoint.flatMap(_.send(message))
   }
-  @Loggable
-  def receive(from: Hexapod, to: Hexapod, transport: Endpoint, word: String, content: Array[Byte],
-    conversation: UUID, creationTimestamp: Long) {
-    log.___gaze(this + " receive " + content)
+  def receive(message: Message) = {
+    log.debug("receive message! " + message)
+    message.destinationHexapod match {
+      case Some(hexapod) if uuid == this.uuid =>
+        Communication.react(Stimulus.IncomingMessage(message))
+      case Some(hexapod) =>
+        log.fatal("receive message instead of neighbor".format(message))
+      case None =>
+        Communication.react(Stimulus.IncomingMessage(message))
+    }
   }
   @Loggable
   def connect(): Boolean = endpoint.filter(_.connect).nonEmpty

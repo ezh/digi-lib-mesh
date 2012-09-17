@@ -27,11 +27,13 @@ import org.digimead.digi.lib.log.Logging
 import org.digimead.digi.lib.mesh.Hub
 import org.digimead.digi.lib.mesh.Mesh
 import org.digimead.digi.lib.mesh.communication.Communication
+import org.digimead.digi.lib.mesh.communication.Message
 import org.digimead.digi.lib.mesh.endpoint.AbstractEndpoint
 import org.digimead.digi.lib.mesh.endpoint.Endpoint
 
 class Hexapod(val uuid: UUID) extends Logging {
   @volatile protected var authSessionKey: Option[BigInt] = None
+  @volatile protected var authDiffieHellman: Option[DiffieHellman] = None
   log.debug("alive %s %s".format(this, uuid))
 
   override def toString = "Hexapod[%08X]".format(this.hashCode())
@@ -52,16 +54,22 @@ object Hexapod extends Publisher[HexapodEvent] with Logging {
     applicationHexapod = arg
   }
   def isInitialized(): Boolean = applicationHexapod != null
+  def setDiffieHellman(hexapod: Hexapod, dh: Option[DiffieHellman]) {
+    hexapod.log.debug("set DiffieHellman parameter for " + hexapod)
+    hexapod.authDiffieHellman = dh
+  }
+  def setSessionKey(hexapod: Hexapod, key: Option[BigInt]) {
+    hexapod.log.debug("set session key parameter for " + hexapod)
+    hexapod.authSessionKey = key
+  }
   override protected[hexapod] def publish(event: HexapodEvent) = super.publish(event)
 
   abstract class AppHexapod(override val uuid: UUID) extends Hexapod(uuid) with AbstractEndpoint with Logging {
     /** Hexapod endpoints */
     protected var endpoint: Seq[Endpoint]
-    protected var authDiffieHellman: Option[DiffieHellman]
 
     def registerEndpoint(endpoint: Endpoint)
-    def receive(from: Hexapod, to: Hexapod, transport: Endpoint, word: String, content: Array[Byte],
-      conversation: UUID, creationTimestamp: Long)
+    def receive(message: Message)
   }
   object Event {
     case class Connect(val endpoints: Endpoint) extends HexapodEvent

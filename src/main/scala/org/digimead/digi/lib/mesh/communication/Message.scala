@@ -18,22 +18,145 @@
 
 package org.digimead.digi.lib.mesh.communication
 
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
+import java.io.DataInputStream
+import java.io.DataOutputStream
 import java.util.UUID
 
-import org.digimead.digi.lib.mesh.endpoint.AbstractEndpoint
+import scala.Option.option2Iterable
+import scala.collection.mutable.HashMap
+import scala.collection.mutable.SynchronizedMap
+
+import org.digimead.digi.lib.log.Logging
+import org.digimead.digi.lib.mesh.Mesh
+import org.digimead.digi.lib.mesh.endpoint.Endpoint
+import org.digimead.digi.lib.mesh.hexapod.Hexapod
 
 abstract class Message(
   val word: String,
-  val replyRequired: Boolean,
+  val isReplyRequired: Boolean,
   val sourceHexapod: UUID,
   val destinationHexapod: Option[UUID],
-  val transportEndpoint: Option[UUID]) extends Receptor {
-  val conversation = UUID.randomUUID()
-  val timestamp = System.currentTimeMillis()
+  val transportEndpoint: Option[UUID],
+  val conversation: UUID = UUID.randomUUID(),
+  val timestamp: Long = System.currentTimeMillis()) extends Receptor {
   assert(word.nonEmpty, "word of message is absent")
+  protected lazy val labelSuffix = Mesh(sourceHexapod) + "->" + destinationHexapod.flatMap(Mesh(_))
 
   def content(): Array[Byte]
-  def isReplyRequired(): Boolean = replyRequired
-  def onMessageSent(endpoint: AbstractEndpoint) {}
-  def onMessageSentFailed() {}
+  def createRawMessage(from: Hexapod, to: Hexapod, transport: Endpoint, key: Option[BigInt]): Array[Byte] = {
+    val baos = new ByteArrayOutputStream()
+    val w = new DataOutputStream(baos)
+    w.writeBoolean(key.nonEmpty)
+    w.writeLong(from.uuid.getLeastSignificantBits())
+    w.writeLong(from.uuid.getMostSignificantBits())
+    val body = key match {
+      case Some(key) =>
+        null // encript message.content
+      case None =>
+        createRawMessageBody(to, transport)
+    }
+    w.writeInt(body.length)
+    w.write(body, 0, body.length)
+    w.flush()
+    val data = baos.toByteArray()
+    w.close()
+    data
+  }
+  private def createRawMessageBody(to: Hexapod, transport: Endpoint): Array[Byte] = {
+    val baos = new ByteArrayOutputStream()
+    val w = new DataOutputStream(baos)
+    w.writeLong(transport.uuid.getLeastSignificantBits())
+    w.writeLong(transport.uuid.getMostSignificantBits())
+    w.writeLong(to.uuid.getLeastSignificantBits())
+    w.writeLong(to.uuid.getMostSignificantBits())
+    w.writeLong(conversation.getLeastSignificantBits())
+    w.writeLong(conversation.getMostSignificantBits())
+    w.writeLong(timestamp)
+    w.writeInt(content.length)
+    w.writeUTF(word)
+    w.write(content, 0, content.length)
+    val data = baos.toByteArray()
+    w.close()
+    data
+  }
 }
+
+object Message extends Logging {
+  private val messageMap = new HashMap[String, MessageBuilder] with SynchronizedMap[String, MessageBuilder]
+
+  def add(word: String, builder: MessageBuilder) = {
+    assert(!messageMap.contains(word), "message with word \"%s\" already defined".format(word))
+    messageMap(word) = builder
+  }
+  def apply(rawMessage: Array[Byte], transport: Endpoint): Option[(Message, UUID)] = parseRawMessage(rawMessage, transport)
+  def parseRawMessage(rawMessage: Array[Byte], transport: Endpoint): Option[(Message, UUID)] = {
+    val bais = new ByteArrayInputStream(rawMessage)
+    val r = new DataInputStream(bais)
+    val encrypted = r.readBoolean()
+    val fromHexapodLSB = r.readLong()
+    val fromHexapodMSB = r.readLong()
+    val bodyLength = r.readInt()
+    val body = new Array[Byte](bodyLength)
+    val actualBodyLength = r.read(body, 0, bodyLength)
+    r.close()
+    assert(actualBodyLength == bodyLength, "raw message body is incomplete %d vs %d".format(bodyLength, actualBodyLength))
+    val fromHexapodUUID = new UUID(fromHexapodMSB, fromHexapodLSB)
+    val fromHexapod: Hexapod = Mesh(fromHexapodUUID) match {
+      case Some(hexapod: Hexapod) => hexapod
+      case _ => new Hexapod(fromHexapodUUID)
+    }
+    val decryptedBody = if (encrypted) {
+      // decrypt
+      null
+    } else {
+      body
+    }
+    val (fromEndpoint, toHexapod, conversation, timestamp, word, content) = parseRawMessageBody(decryptedBody)
+    messageMap.get(word) match {
+      case Some(builder) =>
+        builder.buildMessage(fromHexapod, fromEndpoint, toHexapod, transport.uuid, conversation, timestamp, word, content).
+          map(msg => (msg, fromEndpoint))
+      case None =>
+        log.warn("unable to parse message \"%s\" from %s remoteEndpoint %s".format(word, fromHexapod, fromEndpoint))
+        None
+    }
+  }
+  private def parseRawMessageBody(body: Array[Byte]): (UUID, Hexapod, UUID, Long, String, Array[Byte]) = {
+    val bais = new ByteArrayInputStream(body)
+    val r = new DataInputStream(bais)
+    val fromEndpointLSB = r.readLong()
+    val fromEndpointMSB = r.readLong()
+    val toHexapodLSB = r.readLong()
+    val toHexapodMSB = r.readLong()
+    val conversationLSB = r.readLong()
+    val conversationMSB = r.readLong()
+    val creationTimestamp = r.readLong()
+    val contentLength = r.readInt()
+    val word = r.readUTF()
+    val (content, actualContentLength) = if (contentLength != 0) {
+      val content = new Array[Byte](contentLength)
+      (content, r.read(content, 0, contentLength))
+    } else
+      (Array[Byte](), 0)
+    r.close()
+    assert(actualContentLength == contentLength, "raw message content is incomplete %d vs %d".format(contentLength, actualContentLength))
+    val fromEndpointUUID = new UUID(fromEndpointMSB, fromEndpointLSB)
+    val toHexapodUUID = new UUID(toHexapodMSB, toHexapodLSB)
+    val toHexapod: Hexapod = Mesh(toHexapodUUID) match {
+      case Some(hexapod: Hexapod) => hexapod
+      case _ => new Hexapod(toHexapodUUID)
+    }
+    val conversationUUID = new UUID(conversationMSB, conversationLSB)
+    (fromEndpointUUID, toHexapod, conversationUUID, creationTimestamp, word, content)
+  }
+
+  trait MessageBuilder {
+    /** recreate message from various parameters */
+    def buildMessage(from: Hexapod, fromEndpoint: UUID, to: Hexapod, toEndpoint: UUID,
+      conversation: UUID, timestamp: Long, word: String, content: Array[Byte]): Option[Message]
+  }
+}
+
+
