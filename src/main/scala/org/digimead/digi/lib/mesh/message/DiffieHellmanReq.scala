@@ -44,10 +44,9 @@ import org.digimead.digi.lib.util.Util
 case class DiffieHellmanReq(val publicKey: BigInt, val g: Int, val p: BigInt,
   override val sourceHexapod: UUID,
   override val destinationHexapod: Option[UUID] = None,
-  override val transportEndpoint: Option[UUID] = None,
   override val conversation: UUID = UUID.randomUUID(),
   override val timestamp: Long = System.currentTimeMillis())
-  extends Message(DiffieHellmanReq.word, true, sourceHexapod, destinationHexapod, transportEndpoint) {
+  extends Message(DiffieHellmanReq.word, true, sourceHexapod, destinationHexapod) {
   DiffieHellmanReq.log.debug("alive %s %s %s".format(this, conversation, Util.dateString(new Date(timestamp))))
 
   def content(): Array[Byte] = {
@@ -66,7 +65,7 @@ case class DiffieHellmanReq(val publicKey: BigInt, val g: Int, val p: BigInt,
     data
   }
   def react(stimulus: Stimulus) = stimulus match {
-    case Stimulus.IncomingMessage(message @ DiffieHellmanRes(publicKey, _, _, _, _, _)) if message.conversation == conversation =>
+    case Stimulus.IncomingMessage(message @ DiffieHellmanRes(publicKey, _, _, _, _)) if message.conversation == conversation =>
       Mesh(message.sourceHexapod) match {
         case Some(source: Hexapod) =>
           /*          DiffieHellmanReq.log.debug("generate new DiffieHellmanRes for %s from %s".format(source, word))
@@ -91,8 +90,7 @@ case class DiffieHellmanReq(val publicKey: BigInt, val g: Int, val p: BigInt,
 }
 
 class DiffieHellmanReqBuilder extends Message.MessageBuilder with Logging {
-  def buildMessage(from: Hexapod, fromEndpoint: UUID, to: Hexapod, toEndpoint: UUID,
-    conversation: UUID, timestamp: Long, word: String, content: Array[Byte]): Option[Message] = try {
+  def buildMessage(from: Hexapod, to: Hexapod, conversation: UUID, timestamp: Long, word: String, content: Array[Byte]): Option[Message] = try {
     val bais = new ByteArrayInputStream(content)
     val r = new DataInputStream(bais)
     val publicKeyLength = r.readInt()
@@ -107,7 +105,7 @@ class DiffieHellmanReqBuilder extends Message.MessageBuilder with Logging {
     assert(actualPLength == pLength)
     val p = new BigInt(new java.math.BigInteger(pBytes))
     r.close()
-    Some(DiffieHellmanReq(publicKey, g, p, from.uuid, Some(to.uuid), Some(toEndpoint), conversation, timestamp))
+    Some(DiffieHellmanReq(publicKey, g, p, from.uuid, Some(to.uuid), conversation, timestamp))
   } catch {
     case e =>
       log.warn(e.getMessage())
@@ -117,7 +115,7 @@ class DiffieHellmanReqBuilder extends Message.MessageBuilder with Logging {
 
 class DiffieHellmanReqReceptor extends Receptor {
   def react(stimulus: Stimulus) = stimulus match {
-    case Stimulus.IncomingMessage(message @ DiffieHellmanReq(publicKey, g, p, _, _, _, _, _)) =>
+    case Stimulus.IncomingMessage(message @ DiffieHellmanReq(publicKey, g, p, _, _, _, _)) =>
       Mesh(message.sourceHexapod) match {
         case Some(source: Hexapod) =>
           DiffieHellmanReq.log.debug("generate new DiffieHellmanRes for %s from %s".format(source, DiffieHellmanReq.word))
@@ -129,7 +127,7 @@ class DiffieHellmanReqReceptor extends Receptor {
           val responseSource = message.destinationHexapod.getOrElse(Hexapod.uuid)
           val responseDestination = Some(source.uuid)
           DiffieHellmanReq.log.___glance("!" + responseSource + " -> " + responseDestination)
-          Communication.push(DiffieHellmanRes(dh.getPublicKey, responseSource, responseDestination, None))
+          Communication.push(DiffieHellmanRes(dh.getPublicKey, responseSource, responseDestination))
           Some(true)
         case None =>
           DiffieHellmanReq.log.error("unable to find source hexapod " + message.sourceHexapod)

@@ -32,12 +32,12 @@ import org.scalatest.fixture.FunSuite
 import org.scalatest.matchers.ShouldMatchers.convertToAnyShouldWrapper
 import org.scalatest.matchers.ShouldMatchers.equal
 
-class CommunicationTest extends FunSuite with BeforeAndAfter {
+class CommunicationTestMultiJvmNode1 extends FunSuite with BeforeAndAfter {
   type FixtureParam = Map[String, Any]
 
   override def withFixture(test: OneArgTest) {
     try {
-      if (test.configMap.contains("log"))
+      if (test.configMap.contains("log") || System.getProperty("log") != null)
         Logging.addLogger(ConsoleLogger)
       test(test.configMap)
     } finally {
@@ -59,13 +59,13 @@ class CommunicationTest extends FunSuite with BeforeAndAfter {
 
   test("communication test") {
     conf =>
-      val ping = Ping(UUID.randomUUID(), None, None)
+      val ping = Ping(UUID.randomUUID(), None)
       Communication.push(ping) should equal(true)
       Communication.push(ping) should equal(false)
       Communication.react(Stimulus.IncomingMessage(ping))
 
       val heighborHexapod = new Hexapod(UUID.randomUUID)
-      val pingFromHexapod = Ping(heighborHexapod.uuid, None, None)
+      val pingFromHexapod = Ping(heighborHexapod.uuid, None)
       Communication.push(pingFromHexapod)
   }
 }

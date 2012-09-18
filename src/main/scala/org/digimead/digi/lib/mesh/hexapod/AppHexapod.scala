@@ -31,24 +31,22 @@ import org.digimead.digi.lib.mesh.communication.Communication.communication2impl
 import org.digimead.digi.lib.mesh.communication.Message
 import org.digimead.digi.lib.mesh.communication.Stimulus
 import org.digimead.digi.lib.mesh.endpoint.Endpoint
-import org.digimead.digi.lib.mesh.endpoint.EndpointEvent
 import org.digimead.digi.lib.mesh.message.DiffieHellmanReq
 import org.digimead.digi.lib.mesh.message.DiffieHellmanRes
 
 class AppHexapod(override val uuid: UUID) extends Hexapod.AppHexapod(uuid) {
   @volatile protected var endpoint = Seq[Endpoint]()
   protected val endpointSubscribers = new WeakHashMap[Endpoint, Endpoint#Sub] with SynchronizedMap[Endpoint, Endpoint#Sub]
-  log.debug("alive %s %s".format(this, uuid))
 
   def registerEndpoint(endpoint: Endpoint) {
     log.debug("register %s endpoint at %s".format(endpoint, this))
     this.endpoint = this.endpoint :+ endpoint
     val endpointSubscriber = new endpoint.Sub {
-      def notify(pub: endpoint.Pub, event: EndpointEvent): Unit = event match {
+      def notify(pub: endpoint.Pub, event: Endpoint.Event): Unit = event match {
         case Endpoint.Event.Connect(endpoint) =>
-          Hexapod.publish(Hexapod.Event.Connect(endpoint))
+          Hexapod.Event.publish(Hexapod.Event.Connect(endpoint))
         case Endpoint.Event.Disconnect(endpoint) =>
-          Hexapod.publish(Hexapod.Event.Disconnect(endpoint))
+          Hexapod.Event.publish(Hexapod.Event.Disconnect(endpoint))
       }
     }
     endpoint.subscribe(endpointSubscriber)
@@ -57,13 +55,12 @@ class AppHexapod(override val uuid: UUID) extends Hexapod.AppHexapod(uuid) {
   def send(message: Message): Option[Endpoint] = {
     log.debug("send " + message)
     if (!message.isInstanceOf[DiffieHellmanReq] && !message.isInstanceOf[DiffieHellmanRes]) {
-      log.___glance("!!!!" + checkAuthExistsDH + checkAuthExistsSessionKey)
       if (!checkAuthExistsDH) {
         log.debug("Diffie Hellman authentification data not found, generate new")
         val p = DiffieHellman.randomPrime(128)
         val g = 5
         authDiffieHellman = Some(new DiffieHellman(g, p))
-        Communication.push(DiffieHellmanReq(authDiffieHellman.get.getPublicKey, g, p, uuid, None, None))
+        Communication.push(DiffieHellmanReq(authDiffieHellman.get.getPublicKey, g, p, uuid, None), true)
         Communication.fail(message)
         return None
       }
@@ -92,8 +89,11 @@ class AppHexapod(override val uuid: UUID) extends Hexapod.AppHexapod(uuid) {
   @Loggable
   def connect(): Boolean = endpoint.filter(_.connect).nonEmpty
   @Loggable
-  def reconnect() {}
-  def disconnect() {}
+  def reconnect() = endpoint.foreach(_.reconnect)
+  @Loggable
+  def disconnect() = endpoint.foreach(_.disconnect)
+  @Loggable
+  def connected() = endpoint.exists(_.connected)
   protected def bestEndpoint(target: Endpoint): Option[Endpoint] = {
     None
   }

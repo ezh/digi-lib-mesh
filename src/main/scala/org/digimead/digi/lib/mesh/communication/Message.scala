@@ -30,7 +30,6 @@ import scala.collection.mutable.SynchronizedMap
 
 import org.digimead.digi.lib.log.Logging
 import org.digimead.digi.lib.mesh.Mesh
-import org.digimead.digi.lib.mesh.endpoint.Endpoint
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
 
 abstract class Message(
@@ -38,14 +37,13 @@ abstract class Message(
   val isReplyRequired: Boolean,
   val sourceHexapod: UUID,
   val destinationHexapod: Option[UUID],
-  val transportEndpoint: Option[UUID],
   val conversation: UUID = UUID.randomUUID(),
   val timestamp: Long = System.currentTimeMillis()) extends Receptor {
   assert(word.nonEmpty, "word of message is absent")
   protected lazy val labelSuffix = Mesh(sourceHexapod) + "->" + destinationHexapod.flatMap(Mesh(_))
 
   def content(): Array[Byte]
-  def createRawMessage(from: Hexapod, to: Hexapod, transport: Endpoint, key: Option[BigInt]): Array[Byte] = {
+  def createRawMessage(from: Hexapod, to: Hexapod, key: Option[BigInt]): Array[Byte] = {
     val baos = new ByteArrayOutputStream()
     val w = new DataOutputStream(baos)
     w.writeBoolean(key.nonEmpty)
@@ -55,7 +53,7 @@ abstract class Message(
       case Some(key) =>
         null // encript message.content
       case None =>
-        createRawMessageBody(to, transport)
+        createRawMessageBody(to)
     }
     w.writeInt(body.length)
     w.write(body, 0, body.length)
@@ -64,11 +62,9 @@ abstract class Message(
     w.close()
     data
   }
-  private def createRawMessageBody(to: Hexapod, transport: Endpoint): Array[Byte] = {
+  private def createRawMessageBody(to: Hexapod): Array[Byte] = {
     val baos = new ByteArrayOutputStream()
     val w = new DataOutputStream(baos)
-    w.writeLong(transport.uuid.getLeastSignificantBits())
-    w.writeLong(transport.uuid.getMostSignificantBits())
     w.writeLong(to.uuid.getLeastSignificantBits())
     w.writeLong(to.uuid.getMostSignificantBits())
     w.writeLong(conversation.getLeastSignificantBits())
@@ -90,8 +86,8 @@ object Message extends Logging {
     assert(!messageMap.contains(word), "message with word \"%s\" already defined".format(word))
     messageMap(word) = builder
   }
-  def apply(rawMessage: Array[Byte], transport: Endpoint): Option[(Message, UUID)] = parseRawMessage(rawMessage, transport)
-  def parseRawMessage(rawMessage: Array[Byte], transport: Endpoint): Option[(Message, UUID)] = {
+  def apply(rawMessage: Array[Byte]): Option[Message] = parseRawMessage(rawMessage)
+  def parseRawMessage(rawMessage: Array[Byte]): Option[Message] = {
     val bais = new ByteArrayInputStream(rawMessage)
     val r = new DataInputStream(bais)
     val encrypted = r.readBoolean()
@@ -113,21 +109,18 @@ object Message extends Logging {
     } else {
       body
     }
-    val (fromEndpoint, toHexapod, conversation, timestamp, word, content) = parseRawMessageBody(decryptedBody)
+    val (toHexapod, conversation, timestamp, word, content) = parseRawMessageBody(decryptedBody)
     messageMap.get(word) match {
       case Some(builder) =>
-        builder.buildMessage(fromHexapod, fromEndpoint, toHexapod, transport.uuid, conversation, timestamp, word, content).
-          map(msg => (msg, fromEndpoint))
+        builder.buildMessage(fromHexapod, toHexapod, conversation, timestamp, word, content)
       case None =>
-        log.warn("unable to parse message \"%s\" from %s remoteEndpoint %s".format(word, fromHexapod, fromEndpoint))
+        log.warn("unable to parse message \"%s\" from %s".format(word, fromHexapod))
         None
     }
   }
-  private def parseRawMessageBody(body: Array[Byte]): (UUID, Hexapod, UUID, Long, String, Array[Byte]) = {
+  private def parseRawMessageBody(body: Array[Byte]): (Hexapod, UUID, Long, String, Array[Byte]) = {
     val bais = new ByteArrayInputStream(body)
     val r = new DataInputStream(bais)
-    val fromEndpointLSB = r.readLong()
-    val fromEndpointMSB = r.readLong()
     val toHexapodLSB = r.readLong()
     val toHexapodMSB = r.readLong()
     val conversationLSB = r.readLong()
@@ -142,20 +135,18 @@ object Message extends Logging {
       (Array[Byte](), 0)
     r.close()
     assert(actualContentLength == contentLength, "raw message content is incomplete %d vs %d".format(contentLength, actualContentLength))
-    val fromEndpointUUID = new UUID(fromEndpointMSB, fromEndpointLSB)
     val toHexapodUUID = new UUID(toHexapodMSB, toHexapodLSB)
     val toHexapod: Hexapod = Mesh(toHexapodUUID) match {
       case Some(hexapod: Hexapod) => hexapod
       case _ => new Hexapod(toHexapodUUID)
     }
     val conversationUUID = new UUID(conversationMSB, conversationLSB)
-    (fromEndpointUUID, toHexapod, conversationUUID, creationTimestamp, word, content)
+    (toHexapod, conversationUUID, creationTimestamp, word, content)
   }
 
   trait MessageBuilder {
     /** recreate message from various parameters */
-    def buildMessage(from: Hexapod, fromEndpoint: UUID, to: Hexapod, toEndpoint: UUID,
-      conversation: UUID, timestamp: Long, word: String, content: Array[Byte]): Option[Message]
+    def buildMessage(from: Hexapod, to: Hexapod, conversation: UUID, timestamp: Long, word: String, content: Array[Byte]): Option[Message]
   }
 }
 

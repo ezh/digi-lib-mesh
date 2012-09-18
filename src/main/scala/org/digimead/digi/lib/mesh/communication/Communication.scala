@@ -24,10 +24,11 @@ import scala.collection.mutable.SynchronizedMap
 
 import org.digimead.digi.lib.aop.Loggable
 import org.digimead.digi.lib.log.Logging
+import org.digimead.digi.lib.mesh.Hub
 import org.digimead.digi.lib.mesh.Mesh
 import org.digimead.digi.lib.mesh.hexapod.AppHexapod
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
-import org.digimead.digi.lib.mesh.hexapod.HexapodEvent
+import org.digimead.digi.lib.mesh.hexapod.Hexapod.hexapod2app
 
 class Communication extends Communication.Interface {
   /** global Seq[Receptor] */
@@ -36,14 +37,25 @@ class Communication extends Communication.Interface {
   protected val active = new HashMap[String, Message] with SynchronizedMap[String, Message]
   /** pending Message.word -> Receptor */
   protected val pending = new HashMap[String, Message] with SynchronizedMap[String, Message]
-  protected val appHexapodSubscriber = new Hexapod.Sub {
-    def notify(pub: Hexapod.Pub, event: HexapodEvent): Unit = event match {
+  /** pending message progress counter */
+  protected val sendPendingProgress = new HashMap[String, Int] with SynchronizedMap[String, Int]
+  protected val appHexapodSubscriber = new Hexapod.Event.Sub {
+    def notify(pub: Hexapod.Event.Pub, event: Hexapod.Event): Unit = event match {
       case Hexapod.Event.Connect(endpoint) =>
         processPendingMessages()
       case Hexapod.Event.Disconnect(endpoint) =>
     }
   }
-  Hexapod.subscribe(appHexapodSubscriber)
+  Hexapod.Event.subscribe(appHexapodSubscriber)
+  protected val hubSubscriber = new Hub.Event.Sub {
+    def notify(pub: Hub.Event.Pub, event: Hub.Event): Unit = event match {
+      case Hub.Event.Add(hexapod) =>
+        if (Hexapod.connected)
+          processPendingMessages()
+      case Hub.Event.Remove(hexapod) =>
+    }
+  }
+  Hub.Event.subscribe(hubSubscriber)
 
   def registerGlobal(receptor: Receptor): Unit = synchronized {
     log.debug("add new receptor to global buffer")
@@ -66,11 +78,11 @@ class Communication extends Communication.Interface {
     val result = if (force) {
       log.debug("push message %s to pending buffer".format(message))
       pending(message.word) = message
-      Communication.publish(Communication.Event.Add(message))
+      Communication.Event.publish(Communication.Event.Add(message))
       true
     } else if (!force && !pending.contains(message.word)) {
       log.debug("push message %s to pending buffer".format(message))
-      Communication.publish(Communication.Event.Add(message))
+      Communication.Event.publish(Communication.Event.Add(message))
       pending(message.word) = message
       true
     } else {
@@ -81,7 +93,7 @@ class Communication extends Communication.Interface {
     result
   }
   def fail(message: Message) =
-    Communication.publish(Communication.Event.Fail(message))
+    Communication.Event.publish(Communication.Event.Fail(message))
   def react(stimulus: Stimulus): Option[Boolean] = {
     global.foreach(_.react(stimulus))
     active.map {
@@ -90,11 +102,11 @@ class Communication extends Communication.Interface {
           case Some(true) =>
             log.debug("conversation %s with message %s success".format(message.conversation, message))
             active.remove(word)
-            Communication.publish(Communication.Event.Success(message))
+            Communication.Event.publish(Communication.Event.Success(message))
           case Some(false) =>
             log.debug("conversation %s with message %s failed".format(message.conversation, message))
             active.remove(word)
-            Communication.publish(Communication.Event.Fail(message))
+            Communication.Event.publish(Communication.Event.Fail(message))
           case None =>
         }
     }
@@ -105,27 +117,33 @@ class Communication extends Communication.Interface {
     compactPendingMessages()
   }
   @Loggable
-  protected def sendPendingMessages() = synchronized {
+  protected def sendPendingMessages() = {
     pending.foreach {
       case (word, message) =>
-        Mesh(message.sourceHexapod) match {
-          case Some(hexapod: AppHexapod) =>
+        sendPendingProgress(word) = sendPendingProgress.get(word).getOrElse(0) + 1
+        if (sendPendingProgress(word) == 1)
+          sendPendingMessage(message)
+        sendPendingProgress(word) = sendPendingProgress.get(word).getOrElse(0) - 1
+    }
+  }
+  protected def sendPendingMessage(message: Message) = synchronized {
+    Mesh(message.sourceHexapod) match {
+      case Some(hexapod: AppHexapod) =>
+        hexapod.send(message) match {
+          case Some(endpoint) =>
+            log.debug("pending message %s send successful".format(message))
             if (message.isReplyRequired)
-              active(word) = message
-            hexapod.send(message) match {
-              case Some(endpoint) =>
-                log.debug("pending message %s send successful".format(message))
-                pending.remove(word)
-                Communication.publish(Communication.Event.Active(message))
-                react(Stimulus.OutgoingMessage(message))
-                if (!message.isReplyRequired)
-                  Communication.publish(Communication.Event.Success(message))
-              case None =>
-                log.debug("pending message %s send failed".format(message))
-            }
-          case _ =>
-            log.warn("unable to sent %s: hexapod %s not found".format(message, message.sourceHexapod))
+              active(message.word) = message
+            pending.remove(message.word)
+            Communication.Event.publish(Communication.Event.Active(message))
+            react(Stimulus.OutgoingMessage(message))
+            if (!message.isReplyRequired)
+              Communication.Event.publish(Communication.Event.Success(message))
+          case None =>
+            log.debug("pending message %s send failed".format(message))
         }
+      case _ =>
+        log.warn("unable to sent %s: hexapod %s not found".format(message, message.sourceHexapod))
     }
   }
   protected def compactPendingMessages() = synchronized {
@@ -134,11 +152,8 @@ class Communication extends Communication.Interface {
   override def toString = "default communication implemetation"
 }
 
-sealed trait CommunicationEvent
-
-object Communication extends Publisher[CommunicationEvent] with Logging {
-  implicit def communication2implementation(communication: Communication.type): Interface =
-    communication.implementation
+object Communication extends Logging {
+  implicit def communication2implementation(communication: Communication.type): Interface = communication.implementation
   private var implementation: Interface = null
 
   def init(arg: Init): Unit = synchronized {
@@ -147,7 +162,6 @@ object Communication extends Publisher[CommunicationEvent] with Logging {
     implementation = arg.implementation
   }
   def isInitialized(): Boolean = implementation != null
-  override protected[communication] def publish(event: CommunicationEvent) = super.publish(event)
 
   trait Interface extends Receptor with Logging {
     protected var global: Seq[Receptor]
@@ -167,10 +181,14 @@ object Communication extends Publisher[CommunicationEvent] with Logging {
   class DefaultInit extends Init {
     val implementation: Interface = new Communication
   }
-  object Event {
-    case class Add(message: Message) extends CommunicationEvent
-    case class Active(message: Message) extends CommunicationEvent
-    case class Success(message: Message) extends CommunicationEvent
-    case class Fail(message: Message) extends CommunicationEvent
+
+  sealed trait Event
+  object Event extends Publisher[Event] {
+    override protected[Communication] def publish(event: Event) = super.publish(event)
+
+    case class Add(message: Message) extends Event
+    case class Active(message: Message) extends Event
+    case class Success(message: Message) extends Event
+    case class Fail(message: Message) extends Event
   }
 }

@@ -36,14 +36,11 @@ import org.digimead.digi.lib.mesh.hexapod.AppHexapod
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
 
 class UDPEndpoint(
-  override val uuid: UUID,
-  override val userIdentifier: String,
-  override val deviceIdentifier: String,
   override val transportIdentifier: UDPEndpoint.TransportIdentifier,
   override val hexapod: WeakReference[AppHexapod],
   override val direction: Endpoint.Direction)
-  extends Endpoint(uuid, userIdentifier, deviceIdentifier, transportIdentifier, hexapod, direction) with Logging {
-  log.debug("%s ids are %s [%s] [%s] [%s]".format(this, uuid, userIdentifier, deviceIdentifier, transportIdentifier))
+  extends Endpoint(transportIdentifier, hexapod, direction) with Logging {
+  log.debug("%s ids are %s".format(this, transportIdentifier))
   /** listen interface address, port */
   @volatile protected var socket: Option[DatagramSocket] = None
   @volatile protected var packet: Option[DatagramPacket] = None
@@ -58,9 +55,9 @@ class UDPEndpoint(
   }
   @Loggable
   def receive(message: Array[Byte]) = try {
-    Message.parseRawMessage(message, this) match {
-      case Some((message, remoteEndpointUUID)) =>
-        log.debug("receive message \"%s\" from %s via remote endpoint %s".format(message.word, message.sourceHexapod, remoteEndpointUUID))
+    Message.parseRawMessage(message) match {
+      case Some(message) =>
+        log.debug("receive message \"%s\" from %s".format(message.word, message.sourceHexapod))
         message.destinationHexapod.flatMap(Mesh(_)) match {
           case Some(hexapod: AppHexapod) =>
             NDC.push("R_" + hexapod.toString)
@@ -121,14 +118,18 @@ class UDPEndpoint(
     connected = false
     publish(Endpoint.Event.Disconnect(this))
   }
-  private def findDestination(message: Message): Option[Hexapod] =
+  protected def findDestination(message: Message): Option[Hexapod] =
     message.destinationHexapod match {
       case Some(hexapodUUID) =>
+        // check hexapod in hub with UDP endpoint in
+        log.___glance("1")
         None
       case None =>
+        // search all hexapods in hub with UDP endpoint in
+        log.___glance("2")
         None
     }
-  override def toString = "UDPEndpoint[%08X/%08X/%s]".format(hexapod.get.map(_.hashCode).getOrElse(0), uuid.hashCode(), direction)
+  override def toString = "UDPEndpoint[%08X/%s]".format(hexapod.get.map(_.hashCode).getOrElse(0), direction)
 }
 
 object UDPEndpoint {

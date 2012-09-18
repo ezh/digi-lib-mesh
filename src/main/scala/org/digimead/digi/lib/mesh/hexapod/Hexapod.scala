@@ -24,6 +24,7 @@ import scala.collection.mutable.Publisher
 
 import org.digimead.digi.lib.auth.DiffieHellman
 import org.digimead.digi.lib.log.Logging
+import org.digimead.digi.lib.mesh.Entity
 import org.digimead.digi.lib.mesh.Hub
 import org.digimead.digi.lib.mesh.Mesh
 import org.digimead.digi.lib.mesh.communication.Communication
@@ -31,7 +32,7 @@ import org.digimead.digi.lib.mesh.communication.Message
 import org.digimead.digi.lib.mesh.endpoint.AbstractEndpoint
 import org.digimead.digi.lib.mesh.endpoint.Endpoint
 
-class Hexapod(val uuid: UUID) extends Logging {
+class Hexapod(val uuid: UUID) extends Entity with Logging {
   @volatile protected var authSessionKey: Option[BigInt] = None
   @volatile protected var authDiffieHellman: Option[DiffieHellman] = None
   log.debug("alive %s %s".format(this, uuid))
@@ -39,9 +40,7 @@ class Hexapod(val uuid: UUID) extends Logging {
   override def toString = "Hexapod[%08X]".format(this.hashCode())
 }
 
-sealed trait HexapodEvent
-
-object Hexapod extends Publisher[HexapodEvent] with Logging {
+object Hexapod extends Logging {
   implicit def hexapod2app(h: Hexapod.type): AppHexapod = h.applicationHexapod
   private var applicationHexapod: AppHexapod = null
 
@@ -62,17 +61,20 @@ object Hexapod extends Publisher[HexapodEvent] with Logging {
     hexapod.log.debug("set session key parameter for " + hexapod)
     hexapod.authSessionKey = key
   }
-  override protected[hexapod] def publish(event: HexapodEvent) = super.publish(event)
-
   abstract class AppHexapod(override val uuid: UUID) extends Hexapod(uuid) with AbstractEndpoint with Logging {
     /** Hexapod endpoints */
     protected var endpoint: Seq[Endpoint]
 
     def registerEndpoint(endpoint: Endpoint)
     def receive(message: Message)
+    def connected(): Boolean
   }
-  object Event {
-    case class Connect(val endpoints: Endpoint) extends HexapodEvent
-    case class Disconnect(val endpoints: Endpoint) extends HexapodEvent
+
+  sealed trait Event
+  object Event extends Publisher[Event] {
+    override protected[hexapod] def publish(event: Event) = super.publish(event)
+
+    case class Connect(val endpoints: Endpoint) extends Event
+    case class Disconnect(val endpoints: Endpoint) extends Event
   }
 }

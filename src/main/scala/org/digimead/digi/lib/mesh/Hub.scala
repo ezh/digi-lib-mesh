@@ -20,6 +20,7 @@ package org.digimead.digi.lib.mesh
 
 import scala.collection.mutable.ArrayBuffer
 import scala.collection.mutable.Buffer
+import scala.collection.mutable.Publisher
 import scala.collection.mutable.SynchronizedBuffer
 
 import org.digimead.digi.lib.log.Logging
@@ -30,9 +31,14 @@ import org.digimead.digi.lib.mesh.message.DiffieHellmanRes
 class Hub extends Hub.Interface with Logging {
   protected val pool = new ArrayBuffer[Hexapod] with SynchronizedBuffer[Hexapod]
   def add(node: Hexapod) = {
-
     log.debug("add %s to hub pool".format(node))
     pool += node
+    Hub.Event.publish(Hub.Event.Add(node))
+  }
+  def remove(node: Hexapod) = {
+    log.debug("remove %s to hub pool".format(node))
+    pool -= node
+    Hub.Event.publish(Hub.Event.Remove(node))
   }
   def getBest(): Option[Hexapod] = None
   override def toString = "default hub implemetation"
@@ -56,6 +62,8 @@ object Hub extends Logging {
 
     /** add Hexapod to hub pool */
     def add(node: Hexapod)
+    /** remove Hexapod to hub pool */
+    def remove(node: Hexapod)
     /** get best hexapod */
     def getBest(): Option[Hexapod]
   }
@@ -64,5 +72,12 @@ object Hub extends Logging {
   }
   class DefaultInit extends Init {
     val implementation: Interface = new Hub
+  }
+  sealed trait Event
+  object Event extends Publisher[Event] {
+    override protected[Hub] def publish(event: Event) = super.publish(event)
+
+    case class Add(hexapod: Hexapod) extends Event
+    case class Remove(hexapod: Hexapod) extends Event
   }
 }

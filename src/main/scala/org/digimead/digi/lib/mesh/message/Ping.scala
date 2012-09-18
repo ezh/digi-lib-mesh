@@ -29,15 +29,14 @@ import org.digimead.digi.lib.util.Util
 
 case class Ping(override val sourceHexapod: UUID,
   override val destinationHexapod: Option[UUID] = None,
-  override val transportEndpoint: Option[UUID] = None,
   override val conversation: UUID = UUID.randomUUID(),
   override val timestamp: Long = System.currentTimeMillis())
-  extends Message(Ping.word, true, sourceHexapod, destinationHexapod, transportEndpoint, conversation, timestamp) {
+  extends Message(Ping.word, true, sourceHexapod, destinationHexapod, conversation, timestamp) {
   Ping.log.debug("alive %s %s %s".format(this, conversation, Util.dateString(new Date(timestamp))))
 
   def content(): Array[Byte] = Array()
   def react(stimulus: Stimulus) = stimulus match {
-    case Stimulus.IncomingMessage(message @ Ping(_, _, _, conversation, _)) if message.conversation.compareTo(conversation) == 0 =>
+    case Stimulus.IncomingMessage(message @ Ping(_, _, conversation, _)) if message.conversation.compareTo(conversation) == 0 =>
       Some(true)
     case _ =>
       None
@@ -49,8 +48,7 @@ object Ping extends Message.MessageBuilder with Logging {
   val word = "ping"
   Message.add(word, this)
 
-  def buildMessage(from: Hexapod, fromEndpoint: UUID, to: Hexapod, toEndpoint: UUID,
-    conversation: UUID, timestamp: Long, word: String, content: Array[Byte]): Option[Message] = {
-    Some(Ping(from.uuid, Some(to.uuid), Some(toEndpoint), conversation, timestamp))
+  def buildMessage(from: Hexapod, to: Hexapod, conversation: UUID, timestamp: Long, word: String, content: Array[Byte]): Option[Message] = {
+    Some(Ping(from.uuid, Some(to.uuid), conversation, timestamp))
   }
 }
