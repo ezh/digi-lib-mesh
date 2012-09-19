@@ -48,15 +48,15 @@ class LoopbackEndpoint(
   } yield {
     log.debug("send message %s to %s via %s".format(message, destinationHexapod, this))
     val rawMessage = message.createRawMessage(hexapod, destinationHexapod, key)
-    val sub = new Communication.Event.Sub {
-      def notify(pub: Communication.Event.Pub, event: Communication.Event) = event match {
-        case Communication.Event.Active(passed_message) if passed_message == message =>
-          Communication.Event.removeSubscription(this)
+    val sub = new Communication.Sub {
+      def notify(pub: Communication.Pub, event: Communication.Event) = event match {
+        case Communication.Event.Sent(passed_message) if passed_message == message =>
+          Communication.removeSubscription(this)
           destination.foreach(_.receive(rawMessage))
         case _ =>
       }
     }
-    Communication.Event.subscribe(sub)
+    Communication.subscribe(sub)
     this
   }
   def receive(message: Array[Byte]) = try {

@@ -20,6 +20,9 @@ package org.digimead.digi.lib.mesh.message
 
 import java.util.Date
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicReference
+
+import scala.Option.option2Iterable
 
 import org.digimead.digi.lib.log.Logging
 import org.digimead.digi.lib.mesh.communication.Communication
@@ -30,15 +33,15 @@ import org.digimead.digi.lib.util.Util
 
 case class Ping(override val sourceHexapod: UUID,
   override val destinationHexapod: Option[UUID] = None,
-  override val timeToLive: Long = Communication.holdTimeToLive,
   override val conversation: UUID = UUID.randomUUID(),
+  override val timeToLive: Long = Communication.holdTimeToLive,
   override val timestamp: Long = System.currentTimeMillis())
-  extends Message(Ping.word, true, sourceHexapod, destinationHexapod, timeToLive, conversation, timestamp) {
+  extends Message(Ping.word, true, sourceHexapod, destinationHexapod, conversation, timeToLive, timestamp) {
   Ping.log.debug("alive %s %s %s".format(this, conversation, Util.dateString(new Date(timestamp))))
 
   def content(): Array[Byte] = Array()
   def react(stimulus: Stimulus) = stimulus match {
-    case Stimulus.IncomingMessage(message @ Ping(_, _, _, conversation, _)) if message.conversation.compareTo(conversation) == 0 =>
+    case Stimulus.IncomingMessage(message @ Ping(_, _, conversation, _, _)) if message.conversation.compareTo(conversation) == 0 =>
       Some(true)
     case _ =>
       None
@@ -46,11 +49,29 @@ case class Ping(override val sourceHexapod: UUID,
   override def toString = "Ping[%08X %s]".format(this.hashCode(), labelSuffix)
 }
 
-object Ping extends Message.MessageBuilder with Logging {
-  val word = "ping"
-  Message.add(word, this)
-
+class PingBuilder extends Message.MessageBuilder with Logging {
   def buildMessage(from: Hexapod, to: Hexapod, conversation: UUID, timestamp: Long, word: String, content: Array[Byte]): Option[Message] = {
-    Some(Ping(from.uuid, Some(to.uuid), Communication.holdTimeToLive, conversation, timestamp))
+    Some(Ping(from.uuid, Some(to.uuid), conversation, Communication.holdTimeToLive, timestamp))
+  }
+}
+
+object Ping extends Logging {
+  val word = "ping"
+  private val initializationArgument = new AtomicReference[Option[Init]](None)
+
+  def init(arg: Init): Unit = synchronized {
+    assert(!isInitialized, "DiffieHellmanReq already initialized")
+    assert(Communication.isInitialized, "Communication not initialized")
+    log.debug("initialize DiffieHellmanReq")
+    initializationArgument.set(Some(arg))
+    Message.add(word, arg.builder)
+  }
+  def isInitialized(): Boolean = initializationArgument.get.nonEmpty
+
+  trait Init {
+    val builder: Message.MessageBuilder
+  }
+  class DefaultInit extends Init {
+    val builder: Message.MessageBuilder = new PingBuilder
   }
 }

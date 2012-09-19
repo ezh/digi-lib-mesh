@@ -29,7 +29,6 @@ import java.util.concurrent.atomic.AtomicReference
 import scala.Option.option2Iterable
 
 import org.digimead.digi.lib.aop.Loggable
-import org.digimead.digi.lib.auth.DiffieHellman
 import org.digimead.digi.lib.log.Logging
 import org.digimead.digi.lib.mesh.Mesh
 import org.digimead.digi.lib.mesh.communication.Communication
@@ -37,6 +36,7 @@ import org.digimead.digi.lib.mesh.communication.Communication.communication2impl
 import org.digimead.digi.lib.mesh.communication.Message
 import org.digimead.digi.lib.mesh.communication.Receptor
 import org.digimead.digi.lib.mesh.communication.Stimulus
+import org.digimead.digi.lib.mesh.hexapod.AppHexapod
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
 import org.digimead.digi.lib.mesh.hexapod.Hexapod.hexapod2app
 import org.digimead.digi.lib.util.Util
@@ -47,7 +47,7 @@ case class DiffieHellmanReq(val publicKey: BigInt, val g: Int, val p: BigInt,
   override val timeToLive: Long = Communication.holdTimeToLive,
   override val conversation: UUID = UUID.randomUUID(),
   override val timestamp: Long = System.currentTimeMillis())
-  extends Message(DiffieHellmanReq.word, true, sourceHexapod, destinationHexapod, timeToLive, conversation, timestamp) {
+  extends Message(DiffieHellmanReq.word, true, sourceHexapod, destinationHexapod, conversation, timeToLive, timestamp) {
   DiffieHellmanReq.log.debug("alive %s %s %s".format(this, conversation, Util.dateString(new Date(timestamp))))
 
   def content(): Array[Byte] = {
@@ -67,21 +67,12 @@ case class DiffieHellmanReq(val publicKey: BigInt, val g: Int, val p: BigInt,
   }
   def react(stimulus: Stimulus) = stimulus match {
     case Stimulus.IncomingMessage(message @ DiffieHellmanRes(publicKey, _, _, _, _, _)) if message.conversation == conversation =>
-      Mesh(message.sourceHexapod) match {
-        case Some(source: Hexapod) =>
-          /*          DiffieHellmanReq.log.debug("generate new DiffieHellmanRes for %s from %s".format(source, word))
-          val dh = new DiffieHellman(g, p)
-          dh.createSecretKey()
-          dh.setPeerPublicKey(publicKey)
-          Hexapod.setDiffieHellman(source, Some(dh))
-          Hexapod.setSessionKey(source, Some(dh.createSharedKey))
-          val responseSource = message.destinationHexapod.getOrElse(Hexapod.uuid)
-          val responseDestination = Some(source.uuid)
-          DiffieHellmanReq.log.___glance("!" + responseSource + " -> " + responseDestination)
-          Communication.push(DiffieHellmanRes(dh.getPublicKey, responseSource, responseDestination, transportEndpoint))*/
+      Mesh(sourceHexapod) match {
+        case Some(source: AppHexapod) =>
+          source.updateAuth(publicKey)
           Some(true)
-        case None =>
-          DiffieHellmanReq.log.error("unable to find source hexapod " + message.sourceHexapod)
+        case _ =>
+          DiffieHellmanReq.log.error("unable to find source hexapod " + sourceHexapod)
           Some(false)
       }
     case _ =>
@@ -116,19 +107,14 @@ class DiffieHellmanReqBuilder extends Message.MessageBuilder with Logging {
 
 class DiffieHellmanReqReceptor extends Receptor {
   def react(stimulus: Stimulus) = stimulus match {
-    case Stimulus.IncomingMessage(message @ DiffieHellmanReq(publicKey, g, p, _, _, _, _, _)) =>
+    case Stimulus.IncomingMessage(message @ DiffieHellmanReq(publicKey, g, p, _, _, _, conversation, _)) =>
       Mesh(message.sourceHexapod) match {
         case Some(source: Hexapod) =>
           DiffieHellmanReq.log.debug("generate new DiffieHellmanRes for %s from %s".format(source, DiffieHellmanReq.word))
-          val dh = new DiffieHellman(g, p)
-          dh.createSecretKey()
-          dh.setPeerPublicKey(publicKey)
-          Hexapod.setDiffieHellman(source, Some(dh))
-          Hexapod.setSessionKey(source, Some(dh.createSharedKey))
+          val dh = source.setDiffieHellman(publicKey, g, p)
           val responseSource = message.destinationHexapod.getOrElse(Hexapod.uuid)
           val responseDestination = Some(source.uuid)
-          DiffieHellmanReq.log.___glance("!" + responseSource + " -> " + responseDestination)
-          Communication.push(DiffieHellmanRes(dh.getPublicKey, responseSource, responseDestination))
+          Communication.push(DiffieHellmanRes(dh.getPublicKey, responseSource, responseDestination, conversation))
           Some(true)
         case None =>
           DiffieHellmanReq.log.error("unable to find source hexapod " + message.sourceHexapod)

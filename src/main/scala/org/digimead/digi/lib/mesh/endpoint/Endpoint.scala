@@ -55,14 +55,14 @@ abstract class Endpoint(
     message.destinationHexapod match {
       case Some(hexapodUUID) =>
         Mesh(hexapodUUID) match {
-          case Some(hexapod: Hexapod) if hexapod.endpoints.exists(ep => suitable(ep, Endpoint.In, Endpoint.InOut)) =>
-            hexapod.endpoints.filter(ep => suitable(ep, Endpoint.In, Endpoint.InOut)).headOption
+          case Some(hexapod: Hexapod) if hexapod.getEndpoints.exists(ep => suitable(ep, Endpoint.In, Endpoint.InOut)) =>
+            hexapod.getEndpoints.filter(ep => suitable(ep, Endpoint.In, Endpoint.InOut)).headOption
           case _ =>
-            Peer.get(Some(this.getClass()), Endpoint.In, Endpoint.InOut).map(_.endpoints).flatten.
+            Peer.get(Some(this.getClass()), Endpoint.In, Endpoint.InOut).map(_.getEndpoints).flatten.
               filter(ep => suitable(ep, Endpoint.In, Endpoint.InOut)).headOption
         }
       case None =>
-        Peer.get(Some(this.getClass()), Endpoint.In, Endpoint.InOut).map(_.endpoints).flatten.
+        Peer.get(Some(this.getClass()), Endpoint.In, Endpoint.InOut).map(_.getEndpoints).flatten.
           filter(ep => suitable(ep, Endpoint.In, Endpoint.InOut)).headOption
     }
 }

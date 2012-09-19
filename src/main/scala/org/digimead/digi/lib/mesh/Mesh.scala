@@ -26,6 +26,11 @@ import scala.collection.mutable.SynchronizedMap
 import scala.ref.WeakReference
 
 import org.digimead.digi.lib.log.Logging
+import org.digimead.digi.lib.mesh.communication.Communication
+import org.digimead.digi.lib.mesh.hexapod.Hexapod
+import org.digimead.digi.lib.mesh.message.DiffieHellmanReq
+import org.digimead.digi.lib.mesh.message.DiffieHellmanRes
+import org.digimead.digi.lib.mesh.message.Ping
 
 class Mesh extends Mesh.Interface {
   private val gcLimit = 100
@@ -67,6 +72,16 @@ object Mesh extends Logging {
     implementation = arg.implementation
   }
   def isInitialized(): Boolean = implementation != null
+  def isReady(): Boolean = {
+    assert(Mesh.isInitialized, "Mesh not initialized")
+    assert(Peer.isInitialized, "Peer not initialized")
+    assert(Hexapod.isInitialized, "Hexapod not initialized")
+    assert(Communication.isInitialized, "Communication not initialized")
+    assert(DiffieHellmanReq.isInitialized, "DiffieHellmanReq not initialized")
+    assert(DiffieHellmanRes.isInitialized, "DiffieHellmanRes not initialized")
+    assert(Ping.isInitialized, "Ping not initialized")
+    true
+  }
 
   trait Interface extends Logging {
     protected[Mesh] val entity: HashMap[UUID, WeakReference[Entity]]

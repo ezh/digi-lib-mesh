@@ -31,14 +31,15 @@ import scala.collection.mutable.SynchronizedMap
 import org.digimead.digi.lib.log.Logging
 import org.digimead.digi.lib.mesh.Mesh
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
+import org.digimead.digi.lib.mesh.hexapod.Hexapod.hexapod2app
 
 abstract class Message(
   val word: String,
   val isReplyRequired: Boolean,
   val sourceHexapod: UUID,
   val destinationHexapod: Option[UUID],
-  val timeToLive: Long = Communication.holdTimeToLive,
   val conversation: UUID = UUID.randomUUID(),
+  val timeToLive: Long = Communication.holdTimeToLive,
   val timestamp: Long = System.currentTimeMillis()) extends Receptor {
   assert(word.nonEmpty, "word of message is absent")
   protected lazy val labelSuffix = Mesh(sourceHexapod) + "->" + destinationHexapod.flatMap(Mesh(_))
@@ -111,6 +112,7 @@ object Message extends Logging {
       body
     }
     val (toHexapod, conversation, timestamp, word, content) = parseRawMessageBody(decryptedBody)
+    assert(!Hexapod.isInitialized || fromHexapodUUID != Hexapod.uuid, "illegal message \"%s\" from AppHexapod".format(word))
     messageMap.get(word) match {
       case Some(builder) =>
         builder.buildMessage(fromHexapod, toHexapod, conversation, timestamp, word, content)

@@ -24,6 +24,7 @@ import java.util.UUID
 import scala.collection.mutable.SynchronizedQueue
 import scala.ref.WeakReference
 
+import org.digimead.digi.lib.EventPublisher
 import org.digimead.digi.lib.aop.Loggable
 import org.digimead.digi.lib.log.ConsoleLogger
 import org.digimead.digi.lib.log.Logging
@@ -36,6 +37,7 @@ import org.digimead.digi.lib.mesh.endpoint.UDPEndpoint
 import org.digimead.digi.lib.mesh.endpoint.UDPRemoteEndpoint
 import org.digimead.digi.lib.mesh.hexapod.AppHexapod
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
+import org.digimead.digi.lib.mesh.hexapod.Hexapod.hexapod2app
 import org.digimead.digi.lib.mesh.message.DiffieHellmanReq
 import org.digimead.digi.lib.mesh.message.DiffieHellmanRes
 import org.digimead.digi.lib.mesh.message.Ping
@@ -71,44 +73,44 @@ class MeshTestMultiJvmNode1 extends FunSuite with ShouldMatchers with BeforeAndA
     config =>
       val events = new SynchronizedQueue[Any]
 
-      // subscribe
-      Hexapod.Event.subscribe(new Hexapod.Event.Sub {
-        def notify(pub: Hexapod.Event.Pub, event: Hexapod.Event) {
-          log.___glance("HE:" + event)
-          events += event
-        }
-      })
-      Communication.Event.subscribe(new Communication.Event.Sub {
-        def notify(pub: Communication.Event.Pub, event: Communication.Event) {
-          log.___glance("CE:" + event)
-          events += event
-        }
-      })
-
       // init
       Mesh.init(new Mesh.DefaultInit)
+      Peer.init(new Peer.DefaultInit)
+      val local = new AppHexapod(Common.node1UUID)
+      val localEndpointIn = new UDPEndpoint(UDPEndpoint.TransportIdentifier(Some(InetAddress.getLocalHost()), Some(23456)), new WeakReference(local), Endpoint.In)
+      val localEndpointOut = new UDPEndpoint(UDPEndpoint.TransportIdentifier(), new WeakReference(local), Endpoint.Out)
+      Hexapod.init(local)
       val comm = new Communication {
-        def getPending = pending
-        def getActive = active
-        def getProgress = sendPendingProgress
+        def getBuffer = buffer
+        def getDeliverMessageCounter = deliverMessageCounter
         def getGlobal = global
       }
       Communication.init(new Communication.DefaultInit {
         override val implementation: Communication.Interface = comm
         override val deliverTTL = 1000L
       })
+      Ping.init(new Ping.DefaultInit)
       DiffieHellmanReq.init(new DiffieHellmanReq.DefaultInit)
       DiffieHellmanRes.init(new DiffieHellmanRes.DefaultInit)
-      Peer.init(new Peer.DefaultInit)
-      val local = new AppHexapod(Common.node1UUID)
-      val localEndpointIn = new UDPEndpoint(UDPEndpoint.TransportIdentifier(Some(InetAddress.getLocalHost()), Some(23456)), new WeakReference(local), Endpoint.In)
-      val localEndpointOut = new UDPEndpoint(UDPEndpoint.TransportIdentifier(), new WeakReference(local), Endpoint.Out)
-      Hexapod.init(local)
+      Mesh.isReady should be(true)
 
-      comm.getActive should have size (0)
-      comm.getPending should have size (0)
-      comm.getProgress should have size (0)
-      comm.getGlobal should have size (2)
+      // subscribe
+      Hexapod.subscribe(new Hexapod.Sub {
+        def notify(pub: Hexapod.Pub, event: Hexapod.Event) {
+          log.___glance("HE:" + event)
+          events += event
+        }
+      })
+      Communication.subscribe(new Communication.Sub {
+        def notify(pub: Communication.Pub, event: Communication.Event) {
+          log.___glance("CE:" + event)
+          events += event
+        }
+      })
+
+      comm.getBuffer should have size (0)
+      comm.getDeliverMessageCounter should have size (0)
+      comm.getGlobal should have size (1)
 
       Communication.push(new Ping(local.uuid, None))
 
@@ -122,9 +124,10 @@ class MeshTestMultiJvmNode1 extends FunSuite with ShouldMatchers with BeforeAndA
         case e => log.error("unextected event " + e); false
       }) should be(true)
 
-      comm.getActive should have size (0)
-      comm.getPending should have size (2)
-      comm.getProgress.toString should be("Map(dh_req -> 0, ping -> 0)")
+      comm.getBuffer should have size (2)
+      comm.getBuffer.forall(_._2.condition == Communication.Condition.Pending)
+
+      comm.getDeliverMessageCounter.toString should be("Map(dh_req -> 0, ping -> 0)")
 
       log.___glance("CONNECT ENDPOINT")
       localEndpointIn.connected should equal(false)
@@ -154,19 +157,105 @@ class MeshTestMultiJvmNode1 extends FunSuite with ShouldMatchers with BeforeAndA
       Peer.add(remote)
 
       (events.dequeue match {
-        case Communication.Event.Active(msg: DiffieHellmanReq) => true
+        case Communication.Event.Sent(msg: DiffieHellmanReq) => true
         case e => log.error("unextected event " + e); false
       }) should be(true)
+
+      comm.getBuffer(DiffieHellmanReq.word).condition should be(Communication.Condition.Sent)
+      comm.getBuffer(DiffieHellmanReq.word).counter should be(1)
 
       events should have size (0)
       log.___glance("REMOTE PEER ADDED")
 
-      comm.getActive should have size (1)
-      comm.getPending should have size (1)
+      /*
+       * FAIL(by timeout) TEST
+       * shift 100ms
+       */
+      Thread.sleep(100)
+      Communication.processMessages
+      events should have size (0)
+
+      /*
+       * 2n node 1s sleep
+       */
+      Thread.sleep(1000)
+      Communication.processMessages
+      (events.dequeue match {
+        case Communication.Event.Sent(msg: DiffieHellmanReq) => true
+        case e => log.error("unextected event " + e); false
+      }) should be(true)
+      events should have size (0)
+
+      /*
+       * 2n node 2s sleep
+       */
+      Thread.sleep(1000)
+      Communication.processMessages
+      (events.dequeue match {
+        case Communication.Event.Sent(msg: DiffieHellmanReq) => true
+        case e => log.error("unextected event " + e); false
+      }) should be(true)
+      events should have size (0)
+
+      /*
+       * 2n node 3s sleep
+       */
+      Thread.sleep(1000)
+      Communication.processMessages
+
+      (events.dequeue match {
+        case Communication.Event.Fail(msg: DiffieHellmanReq) => true
+        case e => log.error("unextected event " + e); false
+      }) should be(true)
+
+      (events.dequeue match {
+        case Communication.Event.Fail(msg: Ping) => true
+        case e => log.error("unextected event " + e); false
+      }) should be(true)
+
+      events should have size (0)
+      comm.getBuffer should have size (0)
+      comm.getDeliverMessageCounter should have size (0)
+
+      /*
+       * SUCCESSFULL TEST
+       */
+      Communication.push(new Ping(local.uuid, None))
+      Communication.processMessages
+
+      (events.dequeue match {
+        case Communication.Event.Add(msg: Ping) => true
+        case e => log.error("unextected event " + e); false
+      }) should be(true)
+
+      (events.dequeue match {
+        case Communication.Event.Add(msg: DiffieHellmanReq) => true
+        case e => log.error("unextected event " + e); false
+      }) should be(true)
+
+      (events.dequeue match {
+        case Communication.Event.Sent(msg: DiffieHellmanReq) => true
+        case e => log.error("unextected event " + e); false
+      }) should be(true)
+
+      events should have size (0)
+
+      Thread.sleep(1000)
+      Communication.processMessages
+      events.dequeueAll(_ => true) should have size (1)
+
+      // should be success
+      Thread.sleep(1000)
+      Communication.processMessages
+      events.dequeueAll(_ => true) should have size (1)
+
       Thread.sleep(2000)
+
+    /*comm.getActive should have size (1)
+      comm.getPending should have size (1)
       Communication.processPendingMessages
       comm.getActive should have size (0)
-      comm.getPending should have size (0)
+      comm.getPending should have size (0)*/
   }
 }
 
@@ -198,115 +287,69 @@ class MeshTestMultiJvmNode2 extends FunSuite with ShouldMatchers with BeforeAndA
     config =>
       val events = new SynchronizedQueue[Any]
 
+      // init
+      Mesh.init(new Mesh.DefaultInit)
+      Peer.init(new Peer.DefaultInit)
+      val local = new AppHexapod(Common.node2UUID)
+      val localEndpointIn = new UDPEndpoint(UDPEndpoint.TransportIdentifier(Some(InetAddress.getLocalHost()), Some(23457)), new WeakReference(local), Endpoint.In)
+      val localEndpointOut = new UDPEndpoint(UDPEndpoint.TransportIdentifier(), new WeakReference(local), Endpoint.Out)
+      Hexapod.init(local)
+      val comm = new Communication with EventPublisher[Communication.Event] {
+        def getBuffer = buffer
+        def getDeliverMessageCounter = deliverMessageCounter
+        def getGlobal = global
+        override protected def publish(event: Communication.Event) = lastEvent.synchronized {
+          log.___glance("A=" + event)
+          lastEvent.set(event)
+          lastEvent.notifyAll()
+          super.publish(event)
+        }
+      }
+      Communication.init(new Communication.DefaultInit { override val implementation: Communication.Interface = comm })
+      Ping.init(new Ping.DefaultInit)
+      DiffieHellmanReq.init(new DiffieHellmanReq.DefaultInit)
+      DiffieHellmanRes.init(new DiffieHellmanRes.DefaultInit)
+      Mesh.isReady should be(true)
+
       // subscribe
-      Hexapod.Event.subscribe(new Hexapod.Event.Sub {
-        def notify(pub: Hexapod.Event.Pub, event: Hexapod.Event) {
+      Hexapod.subscribe(new Hexapod.Sub {
+        def notify(pub: Hexapod.Pub, event: Hexapod.Event) {
           log.___glance("HE:" + event)
           events += event
         }
       })
-      Communication.Event.subscribe(new Communication.Event.Sub {
-        def notify(pub: Communication.Event.Pub, event: Communication.Event) {
+      Communication.subscribe(new Communication.Sub {
+        def notify(pub: Communication.Pub, event: Communication.Event) {
           log.___glance("CE:" + event)
           events += event
         }
       })
 
-      // init
-      Mesh.init(new Mesh.DefaultInit)
-      val comm = new Communication {
-        def getPending = pending
-        def getActive = active
-        def getProgress = sendPendingProgress
-        def getGlobal = global
-      }
-      Communication.init(new Communication.DefaultInit { override val implementation: Communication.Interface = comm })
-      DiffieHellmanReq.init(new DiffieHellmanReq.DefaultInit)
-      DiffieHellmanRes.init(new DiffieHellmanRes.DefaultInit)
-      Peer.init(new Peer.DefaultInit)
-      val local = new AppHexapod(Common.node1UUID)
-      val localEndpointIn = new UDPEndpoint(UDPEndpoint.TransportIdentifier(Some(InetAddress.getLocalHost()), Some(23457)), new WeakReference(local), Endpoint.In)
-      val localEndpointOut = new UDPEndpoint(UDPEndpoint.TransportIdentifier(), new WeakReference(local), Endpoint.Out)
-      Hexapod.init(local)
+      comm.getBuffer should have size (0)
+      comm.getDeliverMessageCounter should have size (0)
+      comm.getGlobal should have size (1)
 
-      comm.getActive should have size (0)
-      comm.getPending should have size (0)
-      comm.getProgress should have size (0)
-      comm.getGlobal should have size (2)
-
-      Thread.sleep(2000)
-
-      local.connect()
-
-  }
-  /*finally {
-      Logging.delLogger(ConsoleLogger)
-    }
-  }
-
-  before {
-    Record.init(new Record.InitWithDiagnosticContext)
-    Logging.init(new Logging.DefaultInit)
-    Logging.resume
-  }
-
-  after {
-    Logging.deinit
-  }
-
-  test("loopback mesh test") {
-    config =>
-      Mesh.init(new Mesh.DefaultInit)
-      Communication.init(new Communication.DefaultInit)
-      DiffieHellmanReq.init(new DiffieHellmanReq.DefaultInit)
-      DiffieHellmanRes.init(new DiffieHellmanRes.DefaultInit)
-      Peer.init(new Peer.DefaultInit)
-      val local = new AppHexapod(UUID.randomUUID)
-      val localEndpointIn = new LoopbackEndpoint(UUID.randomUUID, "userA@email", "deviceAIMEI",
-        new Endpoint.TransportIdentifiers {}, new WeakReference(local), Endpoint.In)
-      val localEndpointOut = new LoopbackEndpoint(UUID.randomUUID, "userA@email", "deviceAIMEI",
-        new Endpoint.TransportIdentifiers {}, new WeakReference(local), Endpoint.Out)
-      Hexapod.init(local)
-
-      val remote = new AppHexapod(UUID.randomUUID)
-      val remoteEndpointIn = new LoopbackEndpoint(UUID.randomUUID, "userB@email", "deviceBIMEI",
-        new Endpoint.TransportIdentifiers {}, new WeakReference(remote), Endpoint.In)
-      val remoteEndpointOut = new LoopbackEndpoint(UUID.randomUUID, "userB@email", "deviceBIMEI",
-        new Endpoint.TransportIdentifiers {}, new WeakReference(remote), Endpoint.Out)
-
+      log.___glance("ADD REMOTE PEER")
+      val remote = new Hexapod(Common.node1UUID)
+      val remoteEndpointIn = new UDPRemoteEndpoint(UDPEndpoint.TransportIdentifier(Some(InetAddress.getLocalHost()), Some(23456)), new WeakReference(remote), Endpoint.In)
       Peer.add(remote)
+      log.___glance("REMOTE PEER ADDED")
 
-      localEndpointOut.loopbackConnect(remoteEndpointIn)
-      remoteEndpointOut.loopbackConnect(localEndpointIn)
+      Thread.sleep(5000)
 
-      localEndpointIn.connected should equal(false)
-      localEndpointOut.connected should equal(false)
-      remoteEndpointIn.connected should equal(false)
-      remoteEndpointOut.connected should equal(false)
-
-      @volatile var pingSendStatus = true
-      Communication.subscribe(new Communication.Sub {
-        def notify(pub: Communication.Pub, event: CommunicationEvent) = event match {
-          case Communication.Event.Fail(message: Ping) =>
-            pingSendStatus = false
-          case event =>
-        }
-      })
-      Communication.push(new Ping(local.uuid, None, None))
-      pingSendStatus should equal(false)
-
-      log.___glance("CONNECT LOCAL")
       local.connect()
-      //log.___glance("CONNECT REMOTE")
-      //remote.connect()
 
-      //localEndpointIn.connected should equal(true)
-      //localEndpointOut.connected should equal(true)
-      //remoteEndpointIn.connected should equal(true)
-      //remoteEndpointOut.connected should equal(true)
+      log.___glance("!!!!!!!!A")
+      (comm.waitEvent(5000) match {
+        case Some(Communication.Event.Add(message: DiffieHellmanRes)) => true
+        case e => log.error("unextected event " + e); false
+      }) should be(true)
 
+      (comm.nextEvent(5000) match {
+        case Some(Communication.Event.Sent(message: DiffieHellmanRes)) => true
+        case e => log.error("unextected event " + e); false
+      }) should be(true)
   }
-}*/
 }
 
 object Common {

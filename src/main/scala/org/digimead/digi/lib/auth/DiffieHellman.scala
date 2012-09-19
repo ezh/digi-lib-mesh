@@ -24,7 +24,7 @@ import scala.util.Random
 import org.digimead.digi.lib.aop.Loggable
 import org.digimead.digi.lib.log.Logging
 
-class DiffieHellman(val g: Int, p: BigInt) extends Logging {
+class DiffieHellman(val g: Int, val p: BigInt) extends Logging {
   @volatile var secretKey: BigInt = 0
   @volatile var peerPublicKey: BigInt = 0
 

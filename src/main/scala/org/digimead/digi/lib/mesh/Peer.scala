@@ -41,13 +41,13 @@ class Peer extends Peer.Interface with Logging {
     Peer.Event.publish(Peer.Event.Remove(node))
   }
   def get(transport: Option[Class[_ <: Endpoint]], direction: Endpoint.Direction*): Seq[Hexapod] = {
-    val message = "search best peer" + (if (transport.nonEmpty || direction.nonEmpty) " with " else "")
+    val message = "search best peer" + (if (transport.nonEmpty || direction.nonEmpty) " for " else "")
     val messageTransport = transport.map("transport " + _.getName()).getOrElse("")
     val messageDirrection = (if (transport.nonEmpty) " and " else "") +
       (if (direction.nonEmpty) "direction %s".format(direction.mkString(" or ")) else "")
     log.debug(message + messageTransport + messageDirrection)
     var result = pool.toSeq
-    transport.foreach(transport => result = result.filter(_.endpoints.exists(ep => {
+    transport.foreach(transport => result = result.filter(_.getEndpoints.exists(ep => {
       transport.isAssignableFrom(ep.getClass()) && (direction.isEmpty || direction.contains(ep.direction))
     })))
     result.take(5)
@@ -61,8 +61,6 @@ object Peer extends Logging {
 
   def init(arg: Init): Unit = synchronized {
     assert(Mesh.isInitialized, "Mesh not initialized")
-    assert(DiffieHellmanReq.isInitialized, "DiffieHellmanReq not initialized")
-    assert(DiffieHellmanRes.isInitialized, "DiffieHellmanRes not initialized")
     log.debug("initialize peers pool with " + arg.implementation)
     implementation = arg.implementation
   }

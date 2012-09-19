@@ -42,9 +42,9 @@ class AppHexapod(override val uuid: UUID) extends Hexapod.AppHexapod(uuid) {
     val endpointSubscriber = new endpoint.Sub {
       def notify(pub: endpoint.Pub, event: Endpoint.Event): Unit = event match {
         case Endpoint.Event.Connect(endpoint) =>
-          Hexapod.Event.publish(Hexapod.Event.Connect(endpoint))
+          publish(Hexapod.Event.Connect(endpoint))
         case Endpoint.Event.Disconnect(endpoint) =>
-          Hexapod.Event.publish(Hexapod.Event.Disconnect(endpoint))
+          publish(Hexapod.Event.Disconnect(endpoint))
       }
     }
     endpoint.subscribe(endpointSubscriber)
@@ -58,11 +58,12 @@ class AppHexapod(override val uuid: UUID) extends Hexapod.AppHexapod(uuid) {
         val p = DiffieHellman.randomPrime(128)
         val g = 5
         authDiffieHellman = Some(new DiffieHellman(g, p))
-        Communication.push(DiffieHellmanReq(authDiffieHellman.get.getPublicKey, g, p, uuid, None), true)
+        authDiffieHellman.foreach(dh => Communication.push(DiffieHellmanReq(dh.getPublicKey, dh.g, dh.p, uuid, None), true))
         return None
       }
       if (!checkAuthExistsSessionKey) {
         log.debug("session key not found")
+        authDiffieHellman.foreach(dh => Communication.push(DiffieHellmanReq(dh.getPublicKey, dh.g, dh.p, uuid, None)))
         return None
       }
     }
@@ -72,7 +73,7 @@ class AppHexapod(override val uuid: UUID) extends Hexapod.AppHexapod(uuid) {
     bestEndpoint.flatMap(_.send(message))
   }
   def receive(message: Message) = {
-    log.debug("receive message! " + message)
+    log.debug("receive message " + message)
     message.destinationHexapod match {
       case Some(hexapod) if uuid == this.uuid =>
         Communication.react(Stimulus.IncomingMessage(message))

@@ -57,7 +57,7 @@ class UDPEndpoint(
         port <- endpoint.transportIdentifier.port
         destinationHexapod <- endpoint.hexapod.get
       } yield {
-        log.debug("send message %s via %s %s:%s".format(message, endpoint, addr, port))
+        log.debug("send message %s via %s to %s:%s".format(message, endpoint, addr, port))
         val rawMessage = message.createRawMessage(hexapod, destinationHexapod, key)
         val data = new DatagramPacket(rawMessage, 0, rawMessage.length, addr, port)
         sendSocket.send(data)
@@ -67,7 +67,7 @@ class UDPEndpoint(
       log.fatal("unexpected endpoint type: " + error)
       None
   }) getOrElse {
-    log.debug("unable to send: suitable remote endpoint not fount")
+    log.debug("unable to send: suitable remote endpoint not found")
     None
   }
   @Loggable
@@ -115,7 +115,13 @@ class UDPEndpoint(
         override def run() = {
           if (UDPEndpoint.this.serverThread.nonEmpty) {
             receiveSocket.receive(packet)
-            log.debug("received packet from: " + packet.getAddress())
+            log.debug("received packet from %s %db".format(packet.getAddress().getHostAddress(), packet.getLength()))
+            try {
+              receive(packet.getData())
+            } catch {
+              case e =>
+                log.error(e.getMessage, e)
+            }
             run
           }
         }
