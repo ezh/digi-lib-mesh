@@ -18,21 +18,21 @@
 
 package org.digimead.digi.lib.mesh.endpoint
 
-import java.util.UUID
-
 import scala.collection.mutable.Publisher
 import scala.ref.WeakReference
 
 import org.digimead.digi.lib.log.Logging
-import org.digimead.digi.lib.mesh.Hub
+import org.digimead.digi.lib.mesh.Mesh
+import org.digimead.digi.lib.mesh.Peer
+import org.digimead.digi.lib.mesh.Peer.hub2implementation
 import org.digimead.digi.lib.mesh.communication.Message
-import org.digimead.digi.lib.mesh.hexapod.AppHexapod
+import org.digimead.digi.lib.mesh.hexapod.Hexapod
 
 abstract class Endpoint(
   /** transport level endpoint id */
   val transportIdentifier: Endpoint.TransportIdentifier,
   /** hexapod container */
-  val hexapod: WeakReference[AppHexapod],
+  val hexapod: WeakReference[Hexapod],
   /** direction */
   val direction: Endpoint.Direction)
   extends Publisher[Endpoint.Event] with AbstractEndpoint {
@@ -40,12 +40,31 @@ abstract class Endpoint(
   @volatile var priority = Endpoint.Priority.LOW
   @volatile var connected = false
   @volatile var lastActivity = System.currentTimeMillis
-  assert(Hub.isInitialized, "Hub not initialized")
+  assert(Peer.isInitialized, "Peer not initialized")
   hexapod.get.foreach(_.registerEndpoint(this))
 
   def send(message: Message) = send(message, None)
   def send(message: Message, key: Option[BigInt]): Option[Endpoint]
   def receive(message: Array[Byte])
+  /**
+   * tests against other endpoint
+   */
+  def suitable(ep: Endpoint, directionFilter: Endpoint.Direction*): Boolean =
+    this.getClass.isAssignableFrom(ep.getClass()) && (directionFilter.isEmpty || directionFilter.contains(ep.direction))
+  def findDestinationEndpoint(message: Message): Option[Endpoint] =
+    message.destinationHexapod match {
+      case Some(hexapodUUID) =>
+        Mesh(hexapodUUID) match {
+          case Some(hexapod: Hexapod) if hexapod.endpoints.exists(ep => suitable(ep, Endpoint.In, Endpoint.InOut)) =>
+            hexapod.endpoints.filter(ep => suitable(ep, Endpoint.In, Endpoint.InOut)).headOption
+          case _ =>
+            Peer.get(Some(this.getClass()), Endpoint.In, Endpoint.InOut).map(_.endpoints).flatten.
+              filter(ep => suitable(ep, Endpoint.In, Endpoint.InOut)).headOption
+        }
+      case None =>
+        Peer.get(Some(this.getClass()), Endpoint.In, Endpoint.InOut).map(_.endpoints).flatten.
+          filter(ep => suitable(ep, Endpoint.In, Endpoint.InOut)).headOption
+    }
 }
 
 object Endpoint {

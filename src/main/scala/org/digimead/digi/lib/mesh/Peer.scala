@@ -22,37 +22,48 @@ import scala.collection.mutable.ArrayBuffer
 import scala.collection.mutable.Buffer
 import scala.collection.mutable.Publisher
 import scala.collection.mutable.SynchronizedBuffer
-
 import org.digimead.digi.lib.log.Logging
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
 import org.digimead.digi.lib.mesh.message.DiffieHellmanReq
 import org.digimead.digi.lib.mesh.message.DiffieHellmanRes
+import org.digimead.digi.lib.mesh.endpoint.Endpoint
 
-class Hub extends Hub.Interface with Logging {
+class Peer extends Peer.Interface with Logging {
   protected val pool = new ArrayBuffer[Hexapod] with SynchronizedBuffer[Hexapod]
   def add(node: Hexapod) = {
-    log.debug("add %s to hub pool".format(node))
+    log.debug("add %s to peer pool".format(node))
     pool += node
-    Hub.Event.publish(Hub.Event.Add(node))
+    Peer.Event.publish(Peer.Event.Add(node))
   }
   def remove(node: Hexapod) = {
-    log.debug("remove %s to hub pool".format(node))
+    log.debug("remove %s to peer pool".format(node))
     pool -= node
-    Hub.Event.publish(Hub.Event.Remove(node))
+    Peer.Event.publish(Peer.Event.Remove(node))
   }
-  def getBest(): Option[Hexapod] = None
-  override def toString = "default hub implemetation"
+  def get(transport: Option[Class[_ <: Endpoint]], direction: Endpoint.Direction*): Seq[Hexapod] = {
+    val message = "search best peer" + (if (transport.nonEmpty || direction.nonEmpty) " with " else "")
+    val messageTransport = transport.map("transport " + _.getName()).getOrElse("")
+    val messageDirrection = (if (transport.nonEmpty) " and " else "") +
+      (if (direction.nonEmpty) "direction %s".format(direction.mkString(" or ")) else "")
+    log.debug(message + messageTransport + messageDirrection)
+    var result = pool.toSeq
+    transport.foreach(transport => result = result.filter(_.endpoints.exists(ep => {
+      transport.isAssignableFrom(ep.getClass()) && (direction.isEmpty || direction.contains(ep.direction))
+    })))
+    result.take(5)
+  }
+  override def toString = "default peers pool implemetation"
 }
 
-object Hub extends Logging {
-  implicit def hub2implementation(h: Hub.type): Interface = h.implementation
+object Peer extends Logging {
+  implicit def hub2implementation(h: Peer.type): Interface = h.implementation
   private var implementation: Interface = null
 
   def init(arg: Init): Unit = synchronized {
     assert(Mesh.isInitialized, "Mesh not initialized")
     assert(DiffieHellmanReq.isInitialized, "DiffieHellmanReq not initialized")
     assert(DiffieHellmanRes.isInitialized, "DiffieHellmanRes not initialized")
-    log.debug("initialize hub with " + arg.implementation)
+    log.debug("initialize peers pool with " + arg.implementation)
     implementation = arg.implementation
   }
   def isInitialized(): Boolean = implementation != null
@@ -65,17 +76,17 @@ object Hub extends Logging {
     /** remove Hexapod to hub pool */
     def remove(node: Hexapod)
     /** get best hexapod */
-    def getBest(): Option[Hexapod]
+    def get(transport: Option[Class[_ <: Endpoint]], direction: Endpoint.Direction*): Seq[Hexapod]
   }
   trait Init {
     val implementation: Interface
   }
   class DefaultInit extends Init {
-    val implementation: Interface = new Hub
+    val implementation: Interface = new Peer
   }
   sealed trait Event
   object Event extends Publisher[Event] {
-    override protected[Hub] def publish(event: Event) = super.publish(event)
+    override protected[Peer] def publish(event: Event) = super.publish(event)
 
     case class Add(hexapod: Hexapod) extends Event
     case class Remove(hexapod: Hexapod) extends Event

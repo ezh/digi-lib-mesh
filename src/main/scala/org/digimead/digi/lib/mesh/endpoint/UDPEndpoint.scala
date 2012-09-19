@@ -21,7 +21,6 @@ package org.digimead.digi.lib.mesh.endpoint
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
-import java.util.UUID
 
 import scala.Option.option2Iterable
 import scala.annotation.tailrec
@@ -37,21 +36,39 @@ import org.digimead.digi.lib.mesh.hexapod.Hexapod
 
 class UDPEndpoint(
   override val transportIdentifier: UDPEndpoint.TransportIdentifier,
-  override val hexapod: WeakReference[AppHexapod],
+  override val hexapod: WeakReference[Hexapod],
   override val direction: Endpoint.Direction)
   extends Endpoint(transportIdentifier, hexapod, direction) with Logging {
-  log.debug("%s ids are %s".format(this, transportIdentifier))
+  log.debug("%s %s".format(this, transportIdentifier))
   /** listen interface address, port */
-  @volatile protected var socket: Option[DatagramSocket] = None
+  @volatile protected var receiveSocket: Option[DatagramSocket] = None
+  protected val sendSocket = new DatagramSocket()
   @volatile protected var packet: Option[DatagramPacket] = None
   @volatile protected var serverThread: Option[Thread] = None
   protected val buffer = new Array[Byte](4096)
 
-  def send(message: Message, key: Option[BigInt]): Option[Endpoint] = for {
-    destinationHexapod <- findDestination(message)
+  def send(message: Message, key: Option[BigInt]): Option[Endpoint] = (for {
+    remoteEndpoint <- findDestinationEndpoint(message)
     hexapod <- hexapod.get
-  } yield {
-    this
+  } yield remoteEndpoint match {
+    case endpoint: UDPEndpoint =>
+      for {
+        addr <- endpoint.transportIdentifier.addr
+        port <- endpoint.transportIdentifier.port
+        destinationHexapod <- endpoint.hexapod.get
+      } yield {
+        log.debug("send message %s via %s %s:%s".format(message, endpoint, addr, port))
+        val rawMessage = message.createRawMessage(hexapod, destinationHexapod, key)
+        val data = new DatagramPacket(rawMessage, 0, rawMessage.length, addr, port)
+        sendSocket.send(data)
+        this
+      }
+    case error =>
+      log.fatal("unexpected endpoint type: " + error)
+      None
+  }) getOrElse {
+    log.debug("unable to send: suitable remote endpoint not fount")
+    None
   }
   @Loggable
   def receive(message: Array[Byte]) = try {
@@ -76,7 +93,8 @@ class UDPEndpoint(
   }
   @Loggable
   def connect(): Boolean = synchronized {
-    socket = transportIdentifier match {
+    receiveSocket.map(_.close())
+    receiveSocket = transportIdentifier match {
       case UDPEndpoint.TransportIdentifier(Some(bindaddr), Some(port)) =>
         Some(new DatagramSocket(port, bindaddr))
       case UDPEndpoint.TransportIdentifier(None, Some(port)) =>
@@ -84,9 +102,9 @@ class UDPEndpoint(
       case UDPEndpoint.TransportIdentifier(_, None) =>
         None
     }
-    packet = socket.map(_ => new DatagramPacket(buffer, buffer.length))
+    packet = receiveSocket.map(_ => new DatagramPacket(buffer, buffer.length))
     serverThread = for {
-      socket <- socket
+      receiveSocket <- receiveSocket
       packet <- packet
     } yield {
       assert(direction == Endpoint.In || direction == Endpoint.InOut, "illegal server for Endpoint.Out direction")
@@ -96,7 +114,7 @@ class UDPEndpoint(
         @tailrec
         override def run() = {
           if (UDPEndpoint.this.serverThread.nonEmpty) {
-            socket.receive(packet)
+            receiveSocket.receive(packet)
             log.debug("received packet from: " + packet.getAddress())
             run
           }
@@ -114,21 +132,10 @@ class UDPEndpoint(
   @Loggable
   def disconnect() = synchronized {
     serverThread = None
-    socket.map(_.close())
+    receiveSocket.map(_.close())
     connected = false
     publish(Endpoint.Event.Disconnect(this))
   }
-  protected def findDestination(message: Message): Option[Hexapod] =
-    message.destinationHexapod match {
-      case Some(hexapodUUID) =>
-        // check hexapod in hub with UDP endpoint in
-        log.___glance("1")
-        None
-      case None =>
-        // search all hexapods in hub with UDP endpoint in
-        log.___glance("2")
-        None
-    }
   override def toString = "UDPEndpoint[%08X/%s]".format(hexapod.get.map(_.hashCode).getOrElse(0), direction)
 }
 

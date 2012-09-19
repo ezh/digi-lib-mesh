@@ -18,9 +18,6 @@
 
 package org.digimead.digi.lib.mesh.endpoint
 
-import java.util.UUID
-
-import org.digimead.digi.lib.mesh.Entity
 import org.digimead.digi.lib.mesh.communication.Message
 
 trait AbstractEndpoint {

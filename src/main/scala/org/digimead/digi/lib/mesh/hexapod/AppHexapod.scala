@@ -35,12 +35,10 @@ import org.digimead.digi.lib.mesh.message.DiffieHellmanReq
 import org.digimead.digi.lib.mesh.message.DiffieHellmanRes
 
 class AppHexapod(override val uuid: UUID) extends Hexapod.AppHexapod(uuid) {
-  @volatile protected var endpoint = Seq[Endpoint]()
   protected val endpointSubscribers = new WeakHashMap[Endpoint, Endpoint#Sub] with SynchronizedMap[Endpoint, Endpoint#Sub]
 
-  def registerEndpoint(endpoint: Endpoint) {
-    log.debug("register %s endpoint at %s".format(endpoint, this))
-    this.endpoint = this.endpoint :+ endpoint
+  override def registerEndpoint(endpoint: Endpoint) {
+    super.registerEndpoint(endpoint)
     val endpointSubscriber = new endpoint.Sub {
       def notify(pub: endpoint.Pub, event: Endpoint.Event): Unit = event match {
         case Endpoint.Event.Connect(endpoint) =>
@@ -61,12 +59,10 @@ class AppHexapod(override val uuid: UUID) extends Hexapod.AppHexapod(uuid) {
         val g = 5
         authDiffieHellman = Some(new DiffieHellman(g, p))
         Communication.push(DiffieHellmanReq(authDiffieHellman.get.getPublicKey, g, p, uuid, None), true)
-        Communication.fail(message)
         return None
       }
       if (!checkAuthExistsSessionKey) {
         log.debug("session key not found")
-        Communication.fail(message)
         return None
       }
     }

@@ -24,8 +24,8 @@ import scala.collection.mutable.SynchronizedMap
 
 import org.digimead.digi.lib.aop.Loggable
 import org.digimead.digi.lib.log.Logging
-import org.digimead.digi.lib.mesh.Hub
 import org.digimead.digi.lib.mesh.Mesh
+import org.digimead.digi.lib.mesh.Peer
 import org.digimead.digi.lib.mesh.hexapod.AppHexapod
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
 import org.digimead.digi.lib.mesh.hexapod.Hexapod.hexapod2app
@@ -47,15 +47,15 @@ class Communication extends Communication.Interface {
     }
   }
   Hexapod.Event.subscribe(appHexapodSubscriber)
-  protected val hubSubscriber = new Hub.Event.Sub {
-    def notify(pub: Hub.Event.Pub, event: Hub.Event): Unit = event match {
-      case Hub.Event.Add(hexapod) =>
+  protected val peerSubscriber = new Peer.Event.Sub {
+    def notify(pub: Peer.Event.Pub, event: Peer.Event): Unit = event match {
+      case Peer.Event.Add(hexapod) =>
         if (Hexapod.connected)
           processPendingMessages()
-      case Hub.Event.Remove(hexapod) =>
+      case Peer.Event.Remove(hexapod) =>
     }
   }
-  Hub.Event.subscribe(hubSubscriber)
+  Peer.Event.subscribe(peerSubscriber)
 
   def registerGlobal(receptor: Receptor): Unit = synchronized {
     log.debug("add new receptor to global buffer")
@@ -92,8 +92,6 @@ class Communication extends Communication.Interface {
     sendPendingMessages()
     result
   }
-  def fail(message: Message) =
-    Communication.Event.publish(Communication.Event.Fail(message))
   def react(stimulus: Stimulus): Option[Boolean] = {
     global.foreach(_.react(stimulus))
     active.map {
@@ -147,7 +145,22 @@ class Communication extends Communication.Interface {
     }
   }
   protected def compactPendingMessages() = synchronized {
-
+    pending.foreach {
+      case (word, message) =>
+        if (message.timestamp + message.timeToLive < System.currentTimeMillis()) {
+          log.debug("pending message %s timout".format(message))
+          pending.remove(word)
+          Communication.Event.publish(Communication.Event.Fail(message))
+        }
+    }
+    active.foreach {
+      case (word, message) =>
+        if (message.timestamp + message.timeToLive < System.currentTimeMillis()) {
+          log.debug("active message %s timout".format(message))
+          active.remove(word)
+          Communication.Event.publish(Communication.Event.Fail(message))
+        }
+    }
   }
   override def toString = "default communication implemetation"
 }
@@ -155,13 +168,21 @@ class Communication extends Communication.Interface {
 object Communication extends Logging {
   implicit def communication2implementation(communication: Communication.type): Interface = communication.implementation
   private var implementation: Interface = null
+  private var deliverMax = 3
+  private var deliverTTL = 60000L // 1 minute
+  private var holdTTL = 3600000L // 1 hour
 
   def init(arg: Init): Unit = synchronized {
     assert(Mesh.isInitialized, "Mesh not initialized")
     log.debug("initialize communication with " + arg.implementation)
     implementation = arg.implementation
+    deliverMax = arg.deliverMax
+    deliverTTL = arg.deliverTTL
+    holdTTL = arg.holdTTL
   }
   def isInitialized(): Boolean = implementation != null
+  def holdTimeToLive = holdTTL
+  def deliverTimeToLive = deliverTTL
 
   trait Interface extends Receptor with Logging {
     protected var global: Seq[Receptor]
@@ -171,15 +192,28 @@ object Communication extends Logging {
     def registerGlobal(receptor: Receptor)
     def unregisterGlobal(receptor: Receptor)
     def push(message: Message, force: Boolean = false): Boolean
-    /** notify all subscribers that message send fail */
-    def fail(message: Message)
     def processPendingMessages()
   }
   trait Init {
     val implementation: Interface
+    val deliverMax: Int
+    val deliverTTL: Long
+    val holdTTL: Long
   }
   class DefaultInit extends Init {
     val implementation: Interface = new Communication
+    val deliverMax = 3
+    val deliverTTL = 60000L
+    val holdTTL = 3600000L
+  }
+
+  case class Parcel(val message: Message)(var condition: Condition = Condition.Pending, var counter: Int = 0)
+
+  sealed trait Condition
+  object Condition {
+    case object Pending extends Condition
+    case object Sent extends Condition
+    case object Delivered extends Condition
   }
 
   sealed trait Event

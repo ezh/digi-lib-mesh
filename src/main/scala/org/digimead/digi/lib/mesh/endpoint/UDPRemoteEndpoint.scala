@@ -18,21 +18,20 @@
 
 package org.digimead.digi.lib.mesh.endpoint
 
-import java.util.UUID
-
 import scala.Option.option2Iterable
 import scala.ref.WeakReference
 
 import org.digimead.digi.lib.mesh.communication.Message
-import org.digimead.digi.lib.mesh.hexapod.AppHexapod
+import org.digimead.digi.lib.mesh.hexapod.Hexapod
 
 class UDPRemoteEndpoint(
   override val transportIdentifier: UDPEndpoint.TransportIdentifier,
-  override val hexapod: WeakReference[AppHexapod],
+  override val hexapod: WeakReference[Hexapod],
   override val direction: Endpoint.Direction)
   extends UDPEndpoint(transportIdentifier, hexapod, direction) {
   assert(transportIdentifier.addr.nonEmpty && transportIdentifier.port.nonEmpty, "UDPRemoteEndpoint transportIdentifier incomlete: address %s / port %s".
     format(transportIdentifier.addr, transportIdentifier.port))
+  override protected val sendSocket = null
 
   override def send(message: Message, key: Option[BigInt]): Option[Endpoint] = throw new UnsupportedOperationException
   override def receive(message: Array[Byte]) = throw new UnsupportedOperationException

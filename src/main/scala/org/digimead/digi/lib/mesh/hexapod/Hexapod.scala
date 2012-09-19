@@ -25,7 +25,7 @@ import scala.collection.mutable.Publisher
 import org.digimead.digi.lib.auth.DiffieHellman
 import org.digimead.digi.lib.log.Logging
 import org.digimead.digi.lib.mesh.Entity
-import org.digimead.digi.lib.mesh.Hub
+import org.digimead.digi.lib.mesh.Peer
 import org.digimead.digi.lib.mesh.Mesh
 import org.digimead.digi.lib.mesh.communication.Communication
 import org.digimead.digi.lib.mesh.communication.Message
@@ -33,10 +33,17 @@ import org.digimead.digi.lib.mesh.endpoint.AbstractEndpoint
 import org.digimead.digi.lib.mesh.endpoint.Endpoint
 
 class Hexapod(val uuid: UUID) extends Entity with Logging {
+  /** Hexapod endpoints */
+  @volatile protected var endpoint = Seq[Endpoint]()
   @volatile protected var authSessionKey: Option[BigInt] = None
   @volatile protected var authDiffieHellman: Option[DiffieHellman] = None
   log.debug("alive %s %s".format(this, uuid))
 
+  def registerEndpoint(endpoint: Endpoint) {
+    log.debug("register %s endpoint at %s".format(endpoint, this))
+    this.endpoint = this.endpoint :+ endpoint
+  }
+  def endpoints() = endpoint
   override def toString = "Hexapod[%08X]".format(this.hashCode())
 }
 
@@ -47,7 +54,7 @@ object Hexapod extends Logging {
   def init(arg: AppHexapod): Unit = synchronized {
     assert(!isInitialized, "Hexapod is already initialized")
     assert(Mesh.isInitialized, "Mesh not initialized")
-    assert(Hub.isInitialized, "Hub not initialized")
+    assert(Peer.isInitialized, "Peer not initialized")
     assert(Communication.isInitialized, "Communication not initialized")
     log.debug("initialize application hexapod with " + arg)
     applicationHexapod = arg
@@ -62,10 +69,6 @@ object Hexapod extends Logging {
     hexapod.authSessionKey = key
   }
   abstract class AppHexapod(override val uuid: UUID) extends Hexapod(uuid) with AbstractEndpoint with Logging {
-    /** Hexapod endpoints */
-    protected var endpoint: Seq[Endpoint]
-
-    def registerEndpoint(endpoint: Endpoint)
     def receive(message: Message)
     def connected(): Boolean
   }

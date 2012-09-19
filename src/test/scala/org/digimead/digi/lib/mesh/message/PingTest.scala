@@ -25,7 +25,7 @@ import scala.ref.WeakReference
 import org.digimead.digi.lib.log.ConsoleLogger
 import org.digimead.digi.lib.log.Logging
 import org.digimead.digi.lib.log.Record
-import org.digimead.digi.lib.mesh.Hub
+import org.digimead.digi.lib.mesh.Peer
 import org.digimead.digi.lib.mesh.Mesh
 import org.digimead.digi.lib.mesh.communication.Communication
 import org.digimead.digi.lib.mesh.communication.Message
@@ -58,7 +58,7 @@ class PingTestMultiJvmNode1 extends FunSuite with BeforeAndAfter with ShouldMatc
     Communication.init(new Communication.DefaultInit)
     DiffieHellmanReq.init(new DiffieHellmanReq.DefaultInit)
     DiffieHellmanRes.init(new DiffieHellmanRes.DefaultInit)
-    Hub.init(new Hub.DefaultInit)
+    Peer.init(new Peer.DefaultInit)
   }
 
   after {

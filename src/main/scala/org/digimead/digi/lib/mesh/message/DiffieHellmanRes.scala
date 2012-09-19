@@ -38,14 +38,15 @@ import org.digimead.digi.lib.util.Util
 case class DiffieHellmanRes(val publicKey: BigInt,
   override val sourceHexapod: UUID,
   override val destinationHexapod: Option[UUID] = None,
+  override val timeToLive: Long = Communication.holdTimeToLive,
   override val conversation: UUID = UUID.randomUUID(),
   override val timestamp: Long = System.currentTimeMillis())
-  extends Message(DiffieHellmanRes.word, true, sourceHexapod, destinationHexapod, conversation, timestamp) {
+  extends Message(DiffieHellmanRes.word, true, sourceHexapod, destinationHexapod, timeToLive, conversation, timestamp) {
   DiffieHellmanRes.log.debug("alive %s %s %s".format(this, conversation, Util.dateString(new Date(timestamp))))
 
   def content(): Array[Byte] = publicKey.toByteArray
   def react(stimulus: Stimulus) = stimulus match {
-    case Stimulus.IncomingMessage(message @ Ping(_,  _, _, _)) if message.conversation == conversation =>
+    case Stimulus.IncomingMessage(message @ Ping(_, _, _, _, _)) if message.conversation == conversation =>
       Some(true)
     case _ =>
       None
@@ -59,7 +60,7 @@ class DiffieHellmanResBuilder extends Message.MessageBuilder with Logging {
     val r = new DataInputStream(bais)
     val publicKey = new BigInt(new java.math.BigInteger(content))
     r.close()
-    Some(DiffieHellmanRes(publicKey, from.uuid, Some(to.uuid), conversation, timestamp))
+    Some(DiffieHellmanRes(publicKey, from.uuid, Some(to.uuid), Communication.holdTimeToLive, conversation, timestamp))
   } catch {
     case e =>
       log.warn(e.getMessage())
@@ -69,7 +70,7 @@ class DiffieHellmanResBuilder extends Message.MessageBuilder with Logging {
 
 class DiffieHellmanResReceptor extends Receptor {
   def react(stimulus: Stimulus) = stimulus match {
-    case Stimulus.IncomingMessage(message @ DiffieHellmanReq(publicKey, g, p, _, _, _, _)) =>
+    case Stimulus.IncomingMessage(message @ DiffieHellmanReq(publicKey, g, p, _, _, _, _, _)) =>
       /*      Mesh(message.sourceHexapod) match {
         case Some(source: Hexapod) =>
           DiffieHellmanReq.log.debug("generate new DiffieHellmanRes for %s from %s".format(source, DiffieHellmanReq.word))

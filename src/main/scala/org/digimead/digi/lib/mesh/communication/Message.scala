@@ -37,6 +37,7 @@ abstract class Message(
   val isReplyRequired: Boolean,
   val sourceHexapod: UUID,
   val destinationHexapod: Option[UUID],
+  val timeToLive: Long = Communication.holdTimeToLive,
   val conversation: UUID = UUID.randomUUID(),
   val timestamp: Long = System.currentTimeMillis()) extends Receptor {
   assert(word.nonEmpty, "word of message is absent")
