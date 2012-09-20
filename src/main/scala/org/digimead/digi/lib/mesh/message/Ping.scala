@@ -37,6 +37,7 @@ case class Ping(override val sourceHexapod: UUID,
   override val timeToLive: Long = Communication.holdTimeToLive,
   override val timestamp: Long = System.currentTimeMillis())
   extends Message(Ping.word, true, sourceHexapod, destinationHexapod, conversation, timeToLive, timestamp) {
+  val messageType = Message.Type.Standard
   Ping.log.debug("alive %s %s %s".format(this, conversation, Util.dateString(new Date(timestamp))))
 
   def content(): Array[Byte] = Array()

@@ -48,6 +48,7 @@ case class DiffieHellmanReq(val publicKey: BigInt, val g: Int, val p: BigInt,
   override val conversation: UUID = UUID.randomUUID(),
   override val timestamp: Long = System.currentTimeMillis())
   extends Message(DiffieHellmanReq.word, true, sourceHexapod, destinationHexapod, conversation, timeToLive, timestamp) {
+  val messageType = Message.Type.Unencripted
   DiffieHellmanReq.log.debug("alive %s %s %s".format(this, conversation, Util.dateString(new Date(timestamp))))
 
   def content(): Array[Byte] = {

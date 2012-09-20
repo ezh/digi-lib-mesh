@@ -24,7 +24,6 @@ import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.util.UUID
 
-import scala.Option.option2Iterable
 import scala.collection.mutable.HashMap
 import scala.collection.mutable.SynchronizedMap
 
@@ -32,6 +31,7 @@ import org.digimead.digi.lib.log.Logging
 import org.digimead.digi.lib.mesh.Mesh
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
 import org.digimead.digi.lib.mesh.hexapod.Hexapod.hexapod2app
+import org.digimead.digi.lib.mesh.message.Acknowledgement
 
 abstract class Message(
   val word: String,
@@ -43,12 +43,13 @@ abstract class Message(
   val timestamp: Long = System.currentTimeMillis()) extends Receptor {
   assert(word.nonEmpty, "word of message is absent")
   protected lazy val labelSuffix = Mesh(sourceHexapod) + "->" + destinationHexapod.flatMap(Mesh(_))
+  val messageType: Message.Type.Value
 
   def content(): Array[Byte]
   def createRawMessage(from: Hexapod, to: Hexapod, key: Option[BigInt]): Array[Byte] = {
     val baos = new ByteArrayOutputStream()
     val w = new DataOutputStream(baos)
-    w.writeBoolean(key.nonEmpty)
+    w.writeByte(messageType.id)
     w.writeLong(from.uuid.getLeastSignificantBits())
     w.writeLong(from.uuid.getMostSignificantBits())
     val body = key match {
@@ -92,7 +93,9 @@ object Message extends Logging {
   def parseRawMessage(rawMessage: Array[Byte]): Option[Message] = {
     val bais = new ByteArrayInputStream(rawMessage)
     val r = new DataInputStream(bais)
-    val encrypted = r.readBoolean()
+    val messageType = r.readByte()
+    if (messageType == Message.Type.Acknowledgement.id)
+      return Some(Acknowledgement(r.readInt()))
     val fromHexapodLSB = r.readLong()
     val fromHexapodMSB = r.readLong()
     val bodyLength = r.readInt()
@@ -105,11 +108,11 @@ object Message extends Logging {
       case Some(hexapod: Hexapod) => hexapod
       case _ => new Hexapod(fromHexapodUUID)
     }
-    val decryptedBody = if (encrypted) {
+    val decryptedBody = if (messageType == Message.Type.Unencripted.id) {
+      body
+    } else {
       // decrypt
       null
-    } else {
-      body
     }
     val (toHexapod, conversation, timestamp, word, content) = parseRawMessageBody(decryptedBody)
     assert(!Hexapod.isInitialized || fromHexapodUUID != Hexapod.uuid, "illegal message \"%s\" from AppHexapod".format(word))
@@ -147,6 +150,12 @@ object Message extends Logging {
     (toHexapod, conversationUUID, creationTimestamp, word, content)
   }
 
+  trait Type extends Enumeration {
+    val Acknowledgement = Value(0)
+    val Unencripted = Value(1)
+    val Standard = Value(2)
+  }
+  object Type extends Type
   trait MessageBuilder {
     /** recreate message from various parameters */
     def buildMessage(from: Hexapod, to: Hexapod, conversation: UUID, timestamp: Long, word: String, content: Array[Byte]): Option[Message]
