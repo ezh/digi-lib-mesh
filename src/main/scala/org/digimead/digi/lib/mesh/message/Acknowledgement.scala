@@ -18,16 +18,27 @@
 
 package org.digimead.digi.lib.mesh.message
 
+import java.util.UUID
 import org.digimead.digi.lib.mesh.communication.Message
 import org.digimead.digi.lib.mesh.communication.Stimulus
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
 import org.digimead.digi.lib.mesh.hexapod.Hexapod.hexapod2app
+import java.io.ByteArrayOutputStream
+import java.io.DataOutputStream
 
-case class Acknowledgement(val conversationHash: Int)
-  extends Message(Acknowledgement.word, false, Hexapod.uuid, None) {
+case class Acknowledgement(val conversationHash: Int, destination: Option[UUID] = None)
+  extends Message(Acknowledgement.word, false, Hexapod.uuid, destination) {
   val messageType = Message.Type.Acknowledgement
 
-  def content(): Array[Byte] = Array()
+  def content(): Array[Byte] = {
+    val baos = new ByteArrayOutputStream()
+    val w = new DataOutputStream(baos)
+    w.writeInt(conversationHash)
+    w.flush()
+    val data = baos.toByteArray()
+    w.close()
+    data
+  }
   def react(stimulus: Stimulus) = None
   override def toString = "Acknowledgement[%08X %d]".format(this.hashCode(), conversationHash)
 }

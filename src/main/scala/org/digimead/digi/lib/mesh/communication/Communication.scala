@@ -30,9 +30,12 @@ import org.digimead.digi.lib.mesh.Peer
 import org.digimead.digi.lib.mesh.hexapod.AppHexapod
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
 import org.digimead.digi.lib.mesh.hexapod.Hexapod.hexapod2app
+import org.digimead.digi.lib.mesh.message.Acknowledgement
 
 class Communication extends Communication.Interface {
   assert(Hexapod.isInitialized, "Hexapod not initialized")
+  /** acknowledgment messages buffer */
+  @volatile protected var acknowledgement = Seq[Acknowledgement]()
   /** global Seq[Receptor] */
   @volatile protected var global = Seq[Receptor]()
   /** active Message.word -> Parcel with Receptor */
@@ -74,21 +77,42 @@ class Communication extends Communication.Interface {
     }
     global = global.filter(_ != receptor)
   }
+  def acknowledge(conversationHash: Int) {
+    buffer.map {
+      case (word, parcel @ Communication.Parcel(message, condition)) =>
+        if (!condition.isInstanceOf[Communication.Event.Delivered] && message.conversation.hashCode() == conversationHash) {
+          log.debug("conversation %s with message %s acknowledged".format(message.conversation, message))
+          parcel.condition = Communication.Condition.Delivered
+          publish(Communication.Event.Delivered(message))
+          if (!message.isReplyRequired) {
+            buffer.remove(word)
+            deliverMessageCounter.remove(word)
+            publish(Communication.Event.Success(message))
+          }
+        }
+    }
+  }
   def push(message: Message, force: Boolean = false): Boolean = synchronized {
     assert(Some(message.sourceHexapod) != message.destinationHexapod, "unable to send message to itself")
-    val result = if (force) {
-      log.debug("forced push message %s to buffer".format(message))
-      publish(Communication.Event.Add(message))
-      buffer(message.word) = Communication.Parcel(message, Communication.Condition.Pending)
-      true
-    } else if (!force && !buffer.contains(message.word)) {
-      log.debug("push message %s to buffer".format(message))
-      publish(Communication.Event.Add(message))
-      buffer(message.word) = Communication.Parcel(message, Communication.Condition.Pending)
+    val result = if (message.isInstanceOf[Acknowledgement]) {
+      log.debug("push acknowledgement message to buffer".format(message))
+      acknowledgement = acknowledgement :+ message.asInstanceOf[Acknowledgement]
       true
     } else {
-      log.debug("push message skipped, message %s already in buffer".format(message))
-      false
+      if (force) {
+        log.debug("forced push message %s to buffer".format(message))
+        publish(Communication.Event.Add(message))
+        buffer(message.word) = Communication.Parcel(message, Communication.Condition.Pending)
+        true
+      } else if (!force && !buffer.contains(message.word)) {
+        log.debug("push message %s to buffer".format(message))
+        publish(Communication.Event.Add(message))
+        buffer(message.word) = Communication.Parcel(message, Communication.Condition.Pending)
+        true
+      } else {
+        log.debug("push message skipped, message %s already in buffer".format(message))
+        false
+      }
     }
     deliverMessages()
     result
@@ -119,6 +143,7 @@ class Communication extends Communication.Interface {
   }
   @Loggable
   protected def deliverMessages() = {
+    acknowledgement.foreach(acknowledgement => deliverAcknowledgementMessage(acknowledgement))
     buffer.foreach {
       case (word, Communication.Parcel(message, Communication.Condition.Pending)) =>
         // always try to send pending messages
@@ -140,6 +165,21 @@ class Communication extends Communication.Interface {
       case _ =>
     }
   }
+  protected def deliverAcknowledgementMessage(message: Acknowledgement) {
+    assert(acknowledgement.contains(message), "unable to deliver acknowledgement message " + message)
+    Mesh(message.sourceHexapod) match {
+      case Some(hexapod: AppHexapod) =>
+        hexapod.send(message) match {
+          case Some(endpoint) =>
+            log.debug("acknowledgement message %s sent".format(message))
+            acknowledgement = acknowledgement.filter(_ != message)
+          case None =>
+            log.debug("acknowledgement message %s send failed".format(message))
+        }
+      case _ =>
+        log.warn("unable to sent %s: hexapod %s not found".format(message, message.sourceHexapod))
+    }
+  }
   protected def deliverMessage(message: Message) = synchronized {
     assert(buffer.contains(message.word), "unable to deliver message " + message)
     Mesh(message.sourceHexapod) match {
@@ -158,6 +198,13 @@ class Communication extends Communication.Interface {
     }
   }
   protected def compactMessages() = synchronized {
+    acknowledgement.foreach {
+      acknowledgement =>
+        if ((System.currentTimeMillis() - acknowledgement.timestamp) > acknowledgement.timeToLive) {
+          log.debug("drop acknowledgement message %s, hold time expired".format(acknowledgement))
+          this.acknowledgement = this.acknowledgement.filter(_ != acknowledgement)
+        }
+    }
     buffer.foreach {
       case (word, parcel @ Communication.Parcel(message, Communication.Condition.Pending)) =>
         if (System.currentTimeMillis() - message.timestamp > Communication.deliverTimeToLive * Communication.deliverMax) {
@@ -175,7 +222,13 @@ class Communication extends Communication.Interface {
             publish(Communication.Event.Fail(message))
           }
         }
-      case _ =>
+      case (word, parcel @ Communication.Parcel(message, Communication.Condition.Delivered)) =>
+        if ((System.currentTimeMillis() - message.timestamp) > message.timeToLive) {
+          log.debug("conversation %s with message %s failed, hold time expired".format(message.conversation, message))
+          buffer.remove(word)
+          deliverMessageCounter.remove(word)
+          publish(Communication.Event.Fail(message))
+        }
     }
   }
   override def toString = "default communication implemetation"
@@ -205,10 +258,12 @@ object Communication extends Logging {
 
   trait Interface extends Communication.Pub with Receptor with Logging {
     protected var global: Seq[Receptor]
+    protected var acknowledgement: Seq[Acknowledgement]
     protected val buffer: HashMap[String, Parcel]
 
     def registerGlobal(receptor: Receptor)
     def unregisterGlobal(receptor: Receptor)
+    def acknowledge(conversationHash: Int)
     def push(message: Message, force: Boolean = false): Boolean
     def processMessages()
     override protected def publish(event: Communication.Event) = try {

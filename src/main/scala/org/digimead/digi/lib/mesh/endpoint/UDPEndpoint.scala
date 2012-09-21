@@ -30,9 +30,12 @@ import org.digimead.digi.lib.aop.Loggable
 import org.digimead.digi.lib.log.Logging
 import org.digimead.digi.lib.log.NDC
 import org.digimead.digi.lib.mesh.Mesh
+import org.digimead.digi.lib.mesh.communication.Communication
+import org.digimead.digi.lib.mesh.communication.Communication.communication2implementation
 import org.digimead.digi.lib.mesh.communication.Message
 import org.digimead.digi.lib.mesh.hexapod.AppHexapod
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
+import org.digimead.digi.lib.mesh.message.Acknowledgement
 
 class UDPEndpoint(
   override val transportIdentifier: UDPEndpoint.TransportIdentifier,
@@ -73,6 +76,9 @@ class UDPEndpoint(
   @Loggable
   def receive(message: Array[Byte]) = try {
     Message.parseRawMessage(message) match {
+      case Some(message: Acknowledgement) =>
+        log.debug("receive message \"%s\" from %s with conversation hash %d".format(message.word, message.sourceHexapod, message.conversationHash))
+        Communication.acknowledge(message.conversationHash)
       case Some(message) =>
         log.debug("receive message \"%s\" from %s".format(message.word, message.sourceHexapod))
         message.destinationHexapod.flatMap(Mesh(_)) match {

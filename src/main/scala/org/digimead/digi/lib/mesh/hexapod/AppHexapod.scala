@@ -31,6 +31,7 @@ import org.digimead.digi.lib.mesh.communication.Communication.communication2impl
 import org.digimead.digi.lib.mesh.communication.Message
 import org.digimead.digi.lib.mesh.communication.Stimulus
 import org.digimead.digi.lib.mesh.endpoint.Endpoint
+import org.digimead.digi.lib.mesh.message.Acknowledgement
 import org.digimead.digi.lib.mesh.message.DiffieHellmanReq
 import org.digimead.digi.lib.mesh.message.DiffieHellmanRes
 
@@ -52,7 +53,7 @@ class AppHexapod(override val uuid: UUID) extends Hexapod.AppHexapod(uuid) {
   }
   def send(message: Message): Option[Endpoint] = {
     log.debug("send " + message)
-    if (!message.isInstanceOf[DiffieHellmanReq] && !message.isInstanceOf[DiffieHellmanRes]) {
+    if (!message.isInstanceOf[Acknowledgement] && !message.isInstanceOf[DiffieHellmanReq] && !message.isInstanceOf[DiffieHellmanRes]) {
       if (!checkAuthExistsDH) {
         log.debug("Diffie Hellman authentification data not found, generate new")
         val p = DiffieHellman.randomPrime(128)

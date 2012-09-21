@@ -29,6 +29,7 @@ import scala.collection.mutable.SynchronizedMap
 
 import org.digimead.digi.lib.log.Logging
 import org.digimead.digi.lib.mesh.Mesh
+import org.digimead.digi.lib.mesh.communication.Communication.communication2implementation
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
 import org.digimead.digi.lib.mesh.hexapod.Hexapod.hexapod2app
 import org.digimead.digi.lib.mesh.message.Acknowledgement
@@ -49,17 +50,31 @@ abstract class Message(
   def createRawMessage(from: Hexapod, to: Hexapod, key: Option[BigInt]): Array[Byte] = {
     val baos = new ByteArrayOutputStream()
     val w = new DataOutputStream(baos)
-    w.writeByte(messageType.id)
-    w.writeLong(from.uuid.getLeastSignificantBits())
-    w.writeLong(from.uuid.getMostSignificantBits())
-    val body = key match {
-      case Some(key) =>
-        null // encript message.content
-      case None =>
-        createRawMessageBody(to)
+    // write message type
+    messageType match {
+      case Message.Type.Standard if key.isEmpty =>
+        w.writeByte(Message.Type.Unencripted.id)
+      case _ =>
+        w.writeByte(messageType.id)
     }
-    w.writeInt(body.length)
-    w.write(body, 0, body.length)
+    if (messageType == Message.Type.Acknowledgement) {
+      // write acknowledgement
+      val content = this.content()
+      w.write(content, 0, content.length)
+    } else {
+      // write plain message header
+      w.writeLong(from.uuid.getLeastSignificantBits())
+      w.writeLong(from.uuid.getMostSignificantBits())
+      // write body
+      val body = key match {
+        case Some(key) =>
+          null // encript message.content
+        case None =>
+          createRawMessageBody(to)
+      }
+      w.writeInt(body.length)
+      w.write(body, 0, body.length)
+    }
     w.flush()
     val data = baos.toByteArray()
     w.close()
@@ -116,6 +131,7 @@ object Message extends Logging {
     }
     val (toHexapod, conversation, timestamp, word, content) = parseRawMessageBody(decryptedBody)
     assert(!Hexapod.isInitialized || fromHexapodUUID != Hexapod.uuid, "illegal message \"%s\" from AppHexapod".format(word))
+    Communication.push(Acknowledgement(conversation.hashCode(), Some(fromHexapodUUID)))
     messageMap.get(word) match {
       case Some(builder) =>
         builder.buildMessage(fromHexapod, toHexapod, conversation, timestamp, word, content)

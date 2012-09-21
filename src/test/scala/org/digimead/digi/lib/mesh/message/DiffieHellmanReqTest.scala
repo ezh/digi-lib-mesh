@@ -26,12 +26,13 @@ import scala.ref.WeakReference
 import org.digimead.digi.lib.log.ConsoleLogger
 import org.digimead.digi.lib.log.Logging
 import org.digimead.digi.lib.log.Record
-import org.digimead.digi.lib.mesh.Peer
 import org.digimead.digi.lib.mesh.Mesh
+import org.digimead.digi.lib.mesh.Peer
 import org.digimead.digi.lib.mesh.communication.Communication
 import org.digimead.digi.lib.mesh.communication.Message
 import org.digimead.digi.lib.mesh.endpoint.Endpoint
 import org.digimead.digi.lib.mesh.endpoint.LoopbackEndpoint
+import org.digimead.digi.lib.mesh.hexapod.AppHexapod
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
 import org.scalatest.BeforeAndAfter
 import org.scalatest.fixture.FunSuite
@@ -56,10 +57,13 @@ class DiffieHellmanReqTestMultiJvmNode1 extends FunSuite with BeforeAndAfter wit
     Logging.init(new Logging.DefaultInit)
     Logging.resume
     Mesh.init(new Mesh.DefaultInit)
+    Peer.init(new Peer.DefaultInit)
+    Hexapod.init(new AppHexapod(UUID.randomUUID()))
     Communication.init(new Communication.DefaultInit)
+    Ping.init(new Ping.DefaultInit)
     DiffieHellmanReq.init(new DiffieHellmanReq.DefaultInit)
     DiffieHellmanRes.init(new DiffieHellmanRes.DefaultInit)
-    Peer.init(new Peer.DefaultInit)
+    Mesh.isReady
   }
 
   after {
