@@ -47,7 +47,7 @@ abstract class Endpoint(
   @volatile var priority = Endpoint.Priority.LOW
   @volatile var connected = false
   @volatile var lastActivity = System.currentTimeMillis
-  protected val hexapodSessionKey = new WeakHashMap[Hexapod, Endpoint.SessionKey] with SynchronizedMap[Hexapod, Endpoint.SessionKey]
+  protected val peerSessionKey = new WeakHashMap[Hexapod, Endpoint.SessionKey] with SynchronizedMap[Hexapod, Endpoint.SessionKey]
   assert(Peer.isInitialized, "Peer not initialized")
   terminationPoint.get.foreach(_.registerEndpoint(this))
 
@@ -104,7 +104,7 @@ abstract class Endpoint(
     }
   protected def getKeyForHexapod(peerHexapod: Hexapod): Option[Array[Byte]] = {
     compactRawKeys()
-    hexapodSessionKey.get(peerHexapod) match {
+    peerSessionKey.get(peerHexapod) match {
       case Some(sessionKey) if !sessionKey.isExpired =>
         Some(sessionKey.get)
       case _ =>
@@ -114,7 +114,7 @@ abstract class Endpoint(
               case Some((sharedKey, internalKey)) =>
                 log.debug("update key for " + peerHexapod)
                 val rawKey = Simple.getRawKey(sharedKey.toByteArray)
-                hexapodSessionKey(peerHexapod) = Endpoint.SessionKey(rawKey)
+                peerSessionKey(peerHexapod) = Endpoint.SessionKey(rawKey)
                 Some(rawKey)
               case None =>
                 log.debug("unable to find shared key for " + peerHexapod)
@@ -124,11 +124,17 @@ abstract class Endpoint(
     }
   }
   protected def compactRawKeys() {
-    hexapodSessionKey.foreach {
+    peerSessionKey.foreach {
       case (key, sessionKey) =>
         if (sessionKey.isExpired)
-          hexapodSessionKey.remove(key)
+          peerSessionKey.remove(key)
     }
+  }
+  override protected def publish(event: Endpoint.Event) = try {
+    super.publish(event)
+  } catch {
+    case e =>
+      log.error(e.getMessage(), e)
   }
 }
 

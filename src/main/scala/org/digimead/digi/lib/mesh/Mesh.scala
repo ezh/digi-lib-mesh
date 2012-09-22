@@ -21,7 +21,10 @@ package org.digimead.digi.lib.mesh
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
 
+import scala.annotation.elidable
 import scala.collection.mutable.HashMap
+import scala.collection.mutable.Publisher
+import scala.collection.mutable.Subscriber
 import scala.collection.mutable.SynchronizedMap
 import scala.ref.WeakReference
 
@@ -30,6 +33,8 @@ import org.digimead.digi.lib.mesh.communication.Communication
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
 import org.digimead.digi.lib.mesh.message.DiffieHellman
 import org.digimead.digi.lib.mesh.message.Ping
+
+import annotation.elidable.ASSERTION
 
 class Mesh extends Mesh.Interface {
   private val gcLimit = 100
@@ -40,6 +45,7 @@ class Mesh extends Mesh.Interface {
     assert(!this.entity.contains(entity.uuid), "entity %s already registered".format(entity))
     log.debug("register entity " + entity)
     this.entity(entity.uuid) = new WeakReference(entity)
+    publish(Mesh.Event.Register(entity))
     if (gcCouter.decrementAndGet() == 0) {
       gcCouter.set(gcLimit)
       compact()
@@ -48,6 +54,7 @@ class Mesh extends Mesh.Interface {
   def unregister(entity: Entity) {
     assert(this.entity.contains(entity.uuid), "entity %s not registered".format(entity))
     log.debug("unregister entity " + entity)
+    publish(Mesh.Event.Unregister(entity))
     this.entity.remove(entity.uuid)
   }
   private def compact() {
@@ -62,6 +69,8 @@ class Mesh extends Mesh.Interface {
 }
 
 object Mesh extends Logging {
+  type Pub = Publisher[Event]
+  type Sub = Subscriber[Event, Pub]
   implicit def mesh2implementation(m: Mesh.type): Interface = m.implementation
   private var implementation: Interface = null
 
@@ -81,16 +90,27 @@ object Mesh extends Logging {
     true
   }
 
-  trait Interface extends Logging {
+  trait Interface extends Mesh.Pub with Logging {
     protected[Mesh] val entity: HashMap[UUID, WeakReference[Entity]]
 
     def register(entity: Entity)
     def unregister(entity: Entity)
+    override protected def publish(event: Mesh.Event) = try {
+      super.publish(event)
+    } catch {
+      case e =>
+        log.error(e.getMessage(), e)
+    }
   }
   trait Init {
     val implementation: Interface
   }
   class DefaultInit extends Init {
     val implementation: Interface = new Mesh
+  }
+  sealed trait Event
+  object Event {
+    case class Register(entity: Entity) extends Event
+    case class Unregister(entity: Entity) extends Event
   }
 }

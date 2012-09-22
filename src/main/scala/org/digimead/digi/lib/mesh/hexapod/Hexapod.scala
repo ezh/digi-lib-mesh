@@ -41,16 +41,9 @@ class Hexapod(val uuid: UUID) extends Entity with Hexapod.Pub with Logging {
   /** Hexapod endpoints */
   @volatile protected var endpoint = Seq[Endpoint]()
   @volatile protected var authDiffieHellman: Option[DiffieHellman] = None
-  protected val sessionKey = new WeakHashMap[Hexapod, (BigInt, Array[Byte])] with SynchronizedMap[Hexapod, (BigInt, Array[Byte])]
-  //@volatile protected var rawSessionKey: Option[Array[Byte]] = None
+  protected val peerSessionKey = new WeakHashMap[Hexapod, (BigInt, Array[Byte])] with SynchronizedMap[Hexapod, (BigInt, Array[Byte])]
   log.debug("alive %s %s".format(this, uuid))
 
-  override protected def publish(event: Hexapod.Event) = try {
-    super.publish(event)
-  } catch {
-    case e =>
-      log.error(e.getMessage(), e)
-  }
   def registerEndpoint(endpoint: Endpoint) {
     log.debug("register %s endpoint at %s".format(endpoint, this))
     this.endpoint = this.endpoint :+ endpoint
@@ -62,12 +55,12 @@ class Hexapod(val uuid: UUID) extends Entity with Hexapod.Pub with Logging {
   def setDiffieHellman(g: Int, p: BigInt, publicKey: BigInt, secretKey: BigInt = 0): DiffieHellman = {
     val dh = new DiffieHellman(g, p, secretKey, publicKey)
     authDiffieHellman = Some(dh)
-    publish(Hexapod.Event.SetDiffieHellman(this))
+    //publish(Hexapod.Event.SetDiffieHellman(this))
     dh
   }
   @Loggable
   def getKeyForHexapod(peerHexapod: Hexapod): Option[(BigInt, Array[Byte])] = {
-    sessionKey.get(peerHexapod) match {
+    peerSessionKey.get(peerHexapod) match {
       case result: Some[(BigInt, Array[Byte])] => result
       case None =>
         for {
@@ -76,10 +69,16 @@ class Hexapod(val uuid: UUID) extends Entity with Hexapod.Pub with Logging {
         } yield {
           val sharedKey = localDiffieHellman.getSharedKey(remoteDiffieHellman.publicKey)
           val rawKey = Simple.getRawKey(sharedKey.toByteArray)
-          sessionKey(peerHexapod) = (sharedKey, rawKey)
+          peerSessionKey(peerHexapod) = (sharedKey, rawKey)
           (sharedKey, rawKey)
         }
     }
+  }
+  override protected def publish(event: Hexapod.Event) = try {
+    super.publish(event)
+  } catch {
+    case e =>
+      log.error(e.getMessage(), e)
   }
   override def toString = "Hexapod[%08X]".format(this.hashCode())
 }

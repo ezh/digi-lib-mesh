@@ -23,7 +23,8 @@ import java.util.UUID
 trait Entity {
   val uuid: UUID
   assert(Mesh.isInitialized, "Mesh must be initialized")
-  Mesh.register(this)
+  protected lazy val registerEntity = true // allow prevent Mesh.register(this) for super class initialization
+  if (registerEntity) Mesh.register(this)
 
   /** dispose entity */
   def dispose() = Mesh.unregister(this)

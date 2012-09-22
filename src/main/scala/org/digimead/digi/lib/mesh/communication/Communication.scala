@@ -51,15 +51,15 @@ class Communication extends Communication.Interface {
     }
   }
   Hexapod.subscribe(appHexapodSubscriber)
-  protected val peerSubscriber = new Peer.Event.Sub {
-    def notify(pub: Peer.Event.Pub, event: Peer.Event): Unit = event match {
+  protected val peerSubscriber = new Peer.Sub {
+    def notify(pub: Peer.Pub, event: Peer.Event): Unit = event match {
       case Peer.Event.Add(hexapod) =>
         if (Hexapod.connected)
           processMessages()
       case Peer.Event.Remove(hexapod) =>
     }
   }
-  Peer.Event.subscribe(peerSubscriber)
+  Peer.subscribe(peerSubscriber)
 
   def registerGlobal(receptor: Receptor): Unit = synchronized {
     log.debug("add new receptor to global buffer")
@@ -250,6 +250,7 @@ object Communication extends Logging {
 
   def init(arg: Init): Unit = synchronized {
     assert(Mesh.isInitialized, "Mesh not initialized")
+    assert(Peer.isInitialized, "Peer not initialized")
     assert(Hexapod.isInitialized, "Hexapod not initialized")
     log.debug("initialize communication with " + arg.implementation)
     implementation = arg.implementation

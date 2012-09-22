@@ -245,7 +245,7 @@ class MeshTestMultiJvmNode2 extends FunSuite with ShouldMatchers with BeforeAndA
 
   override def withFixture(test: OneArgTest) {
     try {
-      if (test.configMap.contains("log") || System.getProperty("log-") != null)
+      if (test.configMap.contains("log") || System.getProperty("log") != null)
         Logging.addLogger(ConsoleLogger)
       test(test.configMap)
     } finally {

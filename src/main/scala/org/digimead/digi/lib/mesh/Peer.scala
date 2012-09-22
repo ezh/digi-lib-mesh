@@ -22,23 +22,24 @@ import scala.Option.option2Iterable
 import scala.collection.mutable.ArrayBuffer
 import scala.collection.mutable.Buffer
 import scala.collection.mutable.Publisher
+import scala.collection.mutable.Subscriber
 import scala.collection.mutable.SynchronizedBuffer
 
 import org.digimead.digi.lib.log.Logging
 import org.digimead.digi.lib.mesh.endpoint.Endpoint
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
 
-class Peer extends Peer.Interface with Logging {
+class Peer extends Peer.Interface {
   protected val pool = new ArrayBuffer[Hexapod] with SynchronizedBuffer[Hexapod]
   def add(node: Hexapod) = {
     log.debug("add %s to peer pool".format(node))
     pool += node
-    Peer.Event.publish(Peer.Event.Add(node))
+    publish(Peer.Event.Add(node))
   }
   def remove(node: Hexapod) = {
     log.debug("remove %s to peer pool".format(node))
     pool -= node
-    Peer.Event.publish(Peer.Event.Remove(node))
+    publish(Peer.Event.Remove(node))
   }
   def get(transport: Option[Class[_ <: Endpoint]], direction: Endpoint.Direction*): Seq[Hexapod] = {
     val message = "search best peer" + (if (transport.nonEmpty || direction.nonEmpty) " for " else "")
@@ -56,6 +57,8 @@ class Peer extends Peer.Interface with Logging {
 }
 
 object Peer extends Logging {
+  type Pub = Publisher[Event]
+  type Sub = Subscriber[Event, Pub]
   implicit def hub2implementation(h: Peer.type): Interface = h.implementation
   private var implementation: Interface = null
 
@@ -66,7 +69,7 @@ object Peer extends Logging {
   }
   def isInitialized(): Boolean = implementation != null
 
-  trait Interface {
+  trait Interface extends Peer.Pub with Logging {
     protected val pool: Buffer[Hexapod]
 
     /** add Hexapod to hub pool */
@@ -75,6 +78,12 @@ object Peer extends Logging {
     def remove(node: Hexapod)
     /** get best hexapod */
     def get(transport: Option[Class[_ <: Endpoint]], direction: Endpoint.Direction*): Seq[Hexapod]
+    override protected def publish(event: Peer.Event) = try {
+      super.publish(event)
+    } catch {
+      case e =>
+        log.error(e.getMessage(), e)
+    }
   }
   trait Init {
     val implementation: Interface
@@ -83,9 +92,7 @@ object Peer extends Logging {
     val implementation: Interface = new Peer
   }
   sealed trait Event
-  object Event extends Publisher[Event] {
-    override protected[Peer] def publish(event: Event) = super.publish(event)
-
+  object Event {
     case class Add(hexapod: Hexapod) extends Event
     case class Remove(hexapod: Hexapod) extends Event
   }

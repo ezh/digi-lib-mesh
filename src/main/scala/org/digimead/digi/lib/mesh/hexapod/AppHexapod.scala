@@ -20,22 +20,23 @@ package org.digimead.digi.lib.mesh.hexapod
 
 import java.util.UUID
 
-import scala.Option.option2Iterable
 import scala.collection.mutable.SynchronizedMap
 import scala.collection.mutable.WeakHashMap
 
 import org.digimead.digi.lib.aop.Loggable
 import org.digimead.digi.lib.enc.DiffieHellman
+import org.digimead.digi.lib.mesh.Mesh
+import org.digimead.digi.lib.mesh.Mesh.mesh2implementation
 import org.digimead.digi.lib.mesh.communication.Communication
 import org.digimead.digi.lib.mesh.communication.Communication.communication2implementation
 import org.digimead.digi.lib.mesh.communication.Message
 import org.digimead.digi.lib.mesh.communication.Stimulus
 import org.digimead.digi.lib.mesh.endpoint.Endpoint
-import org.digimead.digi.lib.mesh.message.Acknowledgement
-import org.digimead.digi.lib.mesh.message.{ DiffieHellman => DiffieHellmanMessage }
 
 class AppHexapod(override val uuid: UUID) extends Hexapod.AppHexapod(uuid) {
   protected val endpointSubscribers = new WeakHashMap[Endpoint, Endpoint#Sub] with SynchronizedMap[Endpoint, Endpoint#Sub]
+  override protected lazy val registerEntity = false // prevent Mesh.register(this) while Entity initialization
+  Mesh.register(this)
   if (authDiffieHellman.isEmpty) {
     log.debug("Diffie Hellman authentification data not found, generate new")
     val p = DiffieHellman.randomPrime(128)
