@@ -25,18 +25,23 @@ import scala.collection.mutable.SynchronizedMap
 import scala.collection.mutable.WeakHashMap
 
 import org.digimead.digi.lib.aop.Loggable
-import org.digimead.digi.lib.auth.DiffieHellman
+import org.digimead.digi.lib.enc.DiffieHellman
 import org.digimead.digi.lib.mesh.communication.Communication
 import org.digimead.digi.lib.mesh.communication.Communication.communication2implementation
 import org.digimead.digi.lib.mesh.communication.Message
 import org.digimead.digi.lib.mesh.communication.Stimulus
 import org.digimead.digi.lib.mesh.endpoint.Endpoint
 import org.digimead.digi.lib.mesh.message.Acknowledgement
-import org.digimead.digi.lib.mesh.message.DiffieHellmanReq
-import org.digimead.digi.lib.mesh.message.DiffieHellmanRes
+import org.digimead.digi.lib.mesh.message.{ DiffieHellman => DiffieHellmanMessage }
 
 class AppHexapod(override val uuid: UUID) extends Hexapod.AppHexapod(uuid) {
   protected val endpointSubscribers = new WeakHashMap[Endpoint, Endpoint#Sub] with SynchronizedMap[Endpoint, Endpoint#Sub]
+  if (authDiffieHellman.isEmpty) {
+    log.debug("Diffie Hellman authentification data not found, generate new")
+    val p = DiffieHellman.randomPrime(128)
+    val g = 5
+    authDiffieHellman = Some(new DiffieHellman(g, p))
+  }
 
   override def registerEndpoint(endpoint: Endpoint) {
     super.registerEndpoint(endpoint)
@@ -53,25 +58,16 @@ class AppHexapod(override val uuid: UUID) extends Hexapod.AppHexapod(uuid) {
   }
   def send(message: Message): Option[Endpoint] = {
     log.debug("send " + message)
-    if (!message.isInstanceOf[Acknowledgement] && !message.isInstanceOf[DiffieHellmanReq] && !message.isInstanceOf[DiffieHellmanRes]) {
-      if (!checkAuthExistsDH) {
-        log.debug("Diffie Hellman authentification data not found, generate new")
-        val p = DiffieHellman.randomPrime(128)
-        val g = 5
-        authDiffieHellman = Some(new DiffieHellman(g, p))
-        authDiffieHellman.foreach(dh => Communication.push(DiffieHellmanReq(dh.getPublicKey, dh.g, dh.p, uuid, None), true))
-        return None
-      }
-      if (!checkAuthExistsSessionKey) {
-        log.debug("session key not found")
-        authDiffieHellman.foreach(dh => Communication.push(DiffieHellmanReq(dh.getPublicKey, dh.g, dh.p, uuid, None)))
-        return None
-      }
-    }
-    val bestEndpoint = endpoint.filter(ep =>
+    val bestLocalEndpoint = endpoint.filter(ep =>
       ep.connected &&
         (ep.direction == Endpoint.Out || ep.direction == Endpoint.InOut)).sortBy(_.priority).headOption
-    bestEndpoint.flatMap(_.send(message))
+    bestLocalEndpoint match {
+      case Some(localEndpoint) =>
+        localEndpoint.send(message)
+      case None =>
+        log.warn("local endpoint not found")
+        None
+    }
   }
   def receive(message: Message) = {
     log.debug("receive message " + message)
@@ -104,7 +100,5 @@ class AppHexapod(override val uuid: UUID) extends Hexapod.AppHexapod(uuid) {
   protected def sendCommand[T](f: => T): Boolean = {
     false
   }
-  protected def checkAuthExistsDH(): Boolean = authDiffieHellman.nonEmpty
-  protected def checkAuthExistsSessionKey(): Boolean = authSessionKey.nonEmpty
   override def toString = "AppHexapod[%08X]".format(this.hashCode())
 }

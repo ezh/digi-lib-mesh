@@ -27,7 +27,8 @@ import java.io.ByteArrayOutputStream
 import java.io.DataOutputStream
 
 case class Acknowledgement(val conversationHash: Int, destination: Option[UUID] = None)
-  extends Message(Acknowledgement.word, false, Hexapod.uuid, destination) {
+  extends Message(Acknowledgement.word, Hexapod.uuid, destination, Acknowledgement.zeroUUID) {
+  val isReplyRequired: Boolean = false
   val messageType = Message.Type.Acknowledgement
 
   def content(): Array[Byte] = {
@@ -40,9 +41,10 @@ case class Acknowledgement(val conversationHash: Int, destination: Option[UUID] 
     data
   }
   def react(stimulus: Stimulus) = None
-  override def toString = "Acknowledgement[%08X %d]".format(this.hashCode(), conversationHash)
+  override def toString = "Acknowledgement[%08X]".format(conversationHash)
 }
 
 object Acknowledgement {
   val word = "acknowledgement"
+  lazy val zeroUUID = new UUID(0, 0)
 }

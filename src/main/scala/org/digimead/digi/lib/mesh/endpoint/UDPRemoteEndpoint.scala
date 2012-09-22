@@ -25,18 +25,18 @@ import org.digimead.digi.lib.mesh.communication.Message
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
 
 class UDPRemoteEndpoint(
-  override val transportIdentifier: UDPEndpoint.TransportIdentifier,
-  override val hexapod: WeakReference[Hexapod],
+  override val identifier: UDPEndpoint.TransportIdentifier,
+  override val terminationPoint: WeakReference[Hexapod],
   override val direction: Endpoint.Direction)
-  extends UDPEndpoint(transportIdentifier, hexapod, direction) {
-  assert(transportIdentifier.addr.nonEmpty && transportIdentifier.port.nonEmpty, "UDPRemoteEndpoint transportIdentifier incomlete: address %s / port %s".
-    format(transportIdentifier.addr, transportIdentifier.port))
+  extends UDPEndpoint(identifier, terminationPoint, direction) {
+  assert(identifier.addr.nonEmpty && identifier.port.nonEmpty, "UDPRemoteEndpoint transportIdentifier incomlete: address %s / port %s".
+    format(identifier.addr, identifier.port))
   override protected val sendSocket = null
 
-  override def send(message: Message, key: Option[BigInt]): Option[Endpoint] = throw new UnsupportedOperationException
+  override def send(message: Message): Option[Endpoint] = throw new UnsupportedOperationException
   override def receive(message: Array[Byte]) = throw new UnsupportedOperationException
   override def connect(): Boolean = throw new UnsupportedOperationException
   override def reconnect() = throw new UnsupportedOperationException
   override def disconnect() = throw new UnsupportedOperationException
-  override def toString = "UDPRemoteEndpoint[%08X/%s]".format(hexapod.get.map(_.hashCode).getOrElse(0), direction)
+  override def toString = "UDPRemoteEndpoint[%08X/%s]".format(terminationPoint.get.map(_.hashCode).getOrElse(0), direction)
 }

@@ -30,8 +30,7 @@ import org.digimead.digi.lib.mesh.Peer
 import org.digimead.digi.lib.mesh.communication.Communication.communication2implementation
 import org.digimead.digi.lib.mesh.hexapod.AppHexapod
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
-import org.digimead.digi.lib.mesh.message.DiffieHellmanReq
-import org.digimead.digi.lib.mesh.message.DiffieHellmanRes
+import org.digimead.digi.lib.mesh.message.DiffieHellman
 import org.digimead.digi.lib.mesh.message.Ping
 import org.scalatest.BeforeAndAfter
 import org.scalatest.fixture.FunSuite
@@ -78,8 +77,7 @@ class CommunicationTestMultiJvmNode1 extends FunSuite with ShouldMatchers with B
         override val deliverTTL = 1000L
       })
       Ping.init(new Ping.DefaultInit)
-      DiffieHellmanReq.init(new DiffieHellmanReq.DefaultInit)
-      DiffieHellmanRes.init(new DiffieHellmanRes.DefaultInit)
+      DiffieHellman.init(new DiffieHellman.DefaultInit)
       Mesh.isReady
 
       Communication.subscribe(new Communication.Sub {
@@ -89,7 +87,7 @@ class CommunicationTestMultiJvmNode1 extends FunSuite with ShouldMatchers with B
         }
       })
 
-      val ping = Ping(UUID.randomUUID(), None, UUID.randomUUID(), 1000)
+      val ping = Ping(UUID.randomUUID(), None, UUID.randomUUID(), 1000)(true)
       Communication.push(ping) should equal(true)
       Communication.push(ping) should equal(false)
       comm.getBuffer should have size (1)

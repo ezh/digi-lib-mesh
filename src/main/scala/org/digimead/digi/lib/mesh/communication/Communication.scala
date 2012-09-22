@@ -47,7 +47,7 @@ class Communication extends Communication.Interface {
       case Hexapod.Event.Connect(endpoint) =>
         processMessages()
       case Hexapod.Event.Disconnect(endpoint) =>
-      case Hexapod.Event.UpdateAuth(hexapod) =>
+      case Hexapod.Event.SetDiffieHellman(hexapod) =>
     }
   }
   Hexapod.subscribe(appHexapodSubscriber)
@@ -181,20 +181,25 @@ class Communication extends Communication.Interface {
     }
   }
   protected def deliverMessage(message: Message) = synchronized {
-    assert(buffer.contains(message.word), "unable to deliver message " + message)
-    Mesh(message.sourceHexapod) match {
-      case Some(hexapod: AppHexapod) =>
-        hexapod.send(message) match {
-          case Some(endpoint) =>
-            log.debug("message %s sent".format(message))
-            buffer(message.word).condition = Communication.Condition.Sent
-            buffer(message.word).counter += 1
-            publish(Communication.Event.Sent(message))
-          case None =>
-            log.debug("message %s send failed".format(message))
-        }
-      case _ =>
-        log.warn("unable to sent %s: hexapod %s not found".format(message, message.sourceHexapod))
+    try {
+      assert(buffer.contains(message.word), "unable to deliver message " + message)
+      Mesh(message.sourceHexapod) match {
+        case Some(hexapod: AppHexapod) =>
+          hexapod.send(message) match {
+            case Some(endpoint) =>
+              log.debug("message %s sent".format(message))
+              buffer(message.word).condition = Communication.Condition.Sent
+              buffer(message.word).counter += 1
+              publish(Communication.Event.Sent(message))
+            case None =>
+              log.debug("message %s send failed".format(message))
+          }
+        case _ =>
+          log.warn("unable to sent %s: hexapod %s not found".format(message, message.sourceHexapod))
+      }
+    } catch {
+      case e =>
+        log.error(e.getMessage(), e)
     }
   }
   protected def compactMessages() = synchronized {

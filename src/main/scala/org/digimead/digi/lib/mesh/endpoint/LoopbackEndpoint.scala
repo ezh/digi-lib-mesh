@@ -18,49 +18,52 @@
 
 package org.digimead.digi.lib.mesh.endpoint
 
-import java.util.UUID
-
 import scala.ref.WeakReference
 
+import org.digimead.digi.lib.aop.Loggable
 import org.digimead.digi.lib.log.Logging
 import org.digimead.digi.lib.log.NDC
 import org.digimead.digi.lib.mesh.Mesh
 import org.digimead.digi.lib.mesh.communication.Communication
+import org.digimead.digi.lib.mesh.communication.Communication.communication2implementation
 import org.digimead.digi.lib.mesh.communication.Message
 import org.digimead.digi.lib.mesh.hexapod.AppHexapod
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
 
 class LoopbackEndpoint(
-  override val transportIdentifier: Endpoint.TransportIdentifier,
-  override val hexapod: WeakReference[AppHexapod],
+  override val identifier: Endpoint.TransportIdentifier,
+  override val terminationPoint: WeakReference[AppHexapod],
   override val direction: Endpoint.Direction)
-  extends Endpoint(transportIdentifier, hexapod, direction) with Logging {
-  log.debug("%s %s".format(this, transportIdentifier))
+  extends Endpoint(identifier, terminationPoint, direction) with Logging {
+  log.debug("%s %s".format(this, identifier))
   @volatile var destination: Option[LoopbackEndpoint] = None
 
   def loopbackConnect(endpoint: LoopbackEndpoint) = {
     log.debug("connect %s to %s".format(this, endpoint))
     destination = Some(endpoint)
   }
-  def send(message: Message, key: Option[BigInt]): Option[Endpoint] = for {
-    destinationHexapod <- findDestination(message)
-    hexapod <- hexapod.get
-  } yield {
-    log.debug("send message %s to %s via %s".format(message, destinationHexapod, this))
-    val rawMessage = message.createRawMessage(hexapod, destinationHexapod, key)
-    val sub = new Communication.Sub {
-      def notify(pub: Communication.Pub, event: Communication.Event) = event match {
-        case Communication.Event.Sent(passed_message) if passed_message == message =>
-          Communication.removeSubscription(this)
-          destination.foreach(_.receive(rawMessage))
-        case _ =>
+  @Loggable
+  protected def send(message: Message, key: Option[Array[Byte]], localHexapod: Hexapod, remoteHexapod: Hexapod, remoteEndpoint: Endpoint): Option[Endpoint] = remoteEndpoint match {
+    case remoteEndpoint: LoopbackEndpoint =>
+      log.debug("send message %s to %s via %s".format(message, remoteHexapod, this))
+      val rawMessage = message.createRawMessage(localHexapod, remoteHexapod, key)
+      val sub = new Communication.Sub {
+        def notify(pub: Communication.Pub, event: Communication.Event) = event match {
+          case Communication.Event.Sent(passed_message) if passed_message == message =>
+            Communication.removeSubscription(this)
+            destination.foreach(_.receive(rawMessage))
+          case _ =>
+        }
       }
-    }
-    Communication.subscribe(sub)
-    this
+      Communication.subscribe(sub)
+      Some(this)
+    case error =>
+      log.fatal("unexpected endpoint type: " + error)
+      None
   }
+  @Loggable
   def receive(message: Array[Byte]) = try {
-    Message.parseRawMessage(message) match {
+    Message.parseRawMessage(message, true) match {
       case Some(message) =>
         log.debug("receive message \"%s\" from %s".format(message.word, message.sourceHexapod))
         message.destinationHexapod.flatMap(Mesh(_)) match {
@@ -91,12 +94,12 @@ class LoopbackEndpoint(
     connected = false
     publish(Endpoint.Event.Disconnect(this))
   }
-  private def findDestination(message: Message): Option[Hexapod] =
+  private def getDestination(message: Message): Option[Hexapod] =
     message.destinationHexapod match {
       case Some(hexapodUUID) =>
         this.destination match {
           case Some(dep) =>
-            if (dep.hexapod.get.exists(_.uuid == hexapodUUID)) {
+            if (dep.terminationPoint.get.exists(_.uuid == hexapodUUID)) {
               Mesh(hexapodUUID) match {
                 case Some(entity: Hexapod) =>
                   Some(entity)
@@ -105,7 +108,7 @@ class LoopbackEndpoint(
                   None
               }
             } else {
-              log.debug("unable to send message to %s via %s".format(hexapodUUID, dep.hexapod.get))
+              log.debug("unable to send message to %s via %s".format(hexapodUUID, dep.terminationPoint.get))
               None
             }
           case None =>
@@ -113,7 +116,7 @@ class LoopbackEndpoint(
             None
         }
       case None =>
-        this.destination.flatMap(_.hexapod.get)
+        this.destination.flatMap(_.terminationPoint.get)
     }
-  override def toString = "LoopbackEndpoint[%08X/%s]".format(hexapod.get.map(_.hashCode).getOrElse(0), direction)
+  override def toString = "LoopbackEndpoint[%08X/%s]".format(terminationPoint.get.map(_.hashCode).getOrElse(0), direction)
 }

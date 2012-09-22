@@ -57,14 +57,14 @@ class MessageTestMultiJvmNode1 extends FunSuite with BeforeAndAfter {
 
   test("message serialization test") {
     conf =>
-      val ping = Ping(UUID.randomUUID(), None)
+      val ping = Ping(UUID.randomUUID(), None)(true)
       Logging.commonLogger.debug("ping " + ping + " ts: " + ping.timestamp)
       val pingAsByteArray = Serialization.serializeToArray(ping)
       val ping2 = Serialization.deserializeFromArray[Ping](pingAsByteArray)
       Some(ping) should equal(ping2)
       ping.timestamp should equal(ping2.get.timestamp)
 
-      val ping3 = Ping(UUID.randomUUID(), Some(UUID.randomUUID()))
+      val ping3 = Ping(UUID.randomUUID(), Some(UUID.randomUUID()))(true)
       Logging.commonLogger.debug("ping " + ping3 + " ts: " + ping3.timestamp)
       val ping3AsByteArray = Serialization.serializeToArray(ping3)
       val ping4 = Serialization.deserializeFromArray[Ping](ping3AsByteArray)

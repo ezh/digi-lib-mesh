@@ -38,7 +38,7 @@ import org.scalatest.BeforeAndAfter
 import org.scalatest.fixture.FunSuite
 import org.scalatest.matchers.ShouldMatchers
 
-class DiffieHellmanResTestMultiJvmNode1 extends FunSuite with BeforeAndAfter with ShouldMatchers {
+class DiffieHellmanTestMultiJvmNode1 extends FunSuite with BeforeAndAfter with ShouldMatchers {
   type FixtureParam = Map[String, Any]
   val log = Logging.commonLogger
 
@@ -61,8 +61,7 @@ class DiffieHellmanResTestMultiJvmNode1 extends FunSuite with BeforeAndAfter wit
     Hexapod.init(new AppHexapod(UUID.randomUUID()))
     Communication.init(new Communication.DefaultInit)
     Ping.init(new Ping.DefaultInit)
-    DiffieHellmanReq.init(new DiffieHellmanReq.DefaultInit)
-    DiffieHellmanRes.init(new DiffieHellmanRes.DefaultInit)
+    DiffieHellman.init(new DiffieHellman.DefaultInit)
     Mesh.isReady
   }
 
@@ -70,17 +69,19 @@ class DiffieHellmanResTestMultiJvmNode1 extends FunSuite with BeforeAndAfter wit
     Logging.deinit
   }
 
-  test("DiffieHellmanRes (de)serialization test") {
+  test("DiffieHellman (de)serialization test") {
     conf =>
       val sourceHexapod = new Hexapod(UUID.randomUUID())
       val destinationHexapod = new Hexapod(UUID.randomUUID())
       val transportEndpoint = new LoopbackEndpoint(new Endpoint.TransportIdentifier {}, new WeakReference(null), Endpoint.InOut)
-      val publicKey = 123
-      val resA = DiffieHellmanRes(publicKey, sourceHexapod.uuid, Some(destinationHexapod.uuid))
-      val rawMessage = resA.createRawMessage(sourceHexapod, destinationHexapod, None)
+      val publicKey = 1
+      val g = 2
+      val p = 3
+      val reqA = DiffieHellman(publicKey, g, p, sourceHexapod.uuid, Some(destinationHexapod.uuid))(false)
+      val rawMessage = reqA.createRawMessage(sourceHexapod, destinationHexapod, None)
       rawMessage.length should be > (0)
       log.___glance("raw message length: " + rawMessage.length + " byte")
-      val deserializedMessage = Message.parseRawMessage(rawMessage) match {
+      val deserializedMessage = Message.parseRawMessage(rawMessage, false) match {
         case Some(message) =>
           log.debug("receive message \"%s\" from %s".format(message.word, message.sourceHexapod))
           Some(message)
@@ -88,10 +89,15 @@ class DiffieHellmanResTestMultiJvmNode1 extends FunSuite with BeforeAndAfter wit
           None
       }
       deserializedMessage should not be (None)
-      val resB = deserializedMessage.get
-      assert(resA === resB)
-      log.___glance("original res: " + resB)
-      log.___glance("(de)serialized res: " + resB)
-      assert(resA.toString === resB.toString)
+      val reqB = deserializedMessage.get
+      assert(reqA === reqB)
+      log.___glance("original req: " + reqB)
+      log.___glance("(de)serialized req: " + reqB)
+      assert(reqA.toString === reqB.toString)
+      val reqAX = DiffieHellman(publicKey, g, p, sourceHexapod.uuid, Some(destinationHexapod.uuid), reqA.conversation, reqA.timestamp)(false, 0)
+      val reqBX = new DiffieHellman(publicKey, g, p, sourceHexapod.uuid, Some(destinationHexapod.uuid), reqA.conversation, reqA.timestamp)(true, 1)
+      assert(reqA.toString === reqAX.toString)
+      assert(reqAX === reqBX)
+      assert(reqA === reqAX)
   }
 }

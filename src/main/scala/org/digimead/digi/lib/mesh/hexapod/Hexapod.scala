@@ -22,9 +22,13 @@ import java.util.UUID
 
 import scala.collection.mutable.Publisher
 import scala.collection.mutable.Subscriber
+import scala.collection.mutable.SynchronizedMap
+import scala.collection.mutable.WeakHashMap
+import scala.math.BigInt.int2bigInt
 
 import org.digimead.digi.lib.aop.Loggable
-import org.digimead.digi.lib.auth.DiffieHellman
+import org.digimead.digi.lib.enc.DiffieHellman
+import org.digimead.digi.lib.enc.Simple
 import org.digimead.digi.lib.log.Logging
 import org.digimead.digi.lib.mesh.Entity
 import org.digimead.digi.lib.mesh.Mesh
@@ -36,8 +40,9 @@ import org.digimead.digi.lib.mesh.endpoint.Endpoint
 class Hexapod(val uuid: UUID) extends Entity with Hexapod.Pub with Logging {
   /** Hexapod endpoints */
   @volatile protected var endpoint = Seq[Endpoint]()
-  @volatile protected var authSessionKey: Option[BigInt] = None
   @volatile protected var authDiffieHellman: Option[DiffieHellman] = None
+  protected val sessionKey = new WeakHashMap[Hexapod, (BigInt, Array[Byte])] with SynchronizedMap[Hexapod, (BigInt, Array[Byte])]
+  //@volatile protected var rawSessionKey: Option[Array[Byte]] = None
   log.debug("alive %s %s".format(this, uuid))
 
   override protected def publish(event: Hexapod.Event) = try {
@@ -52,22 +57,29 @@ class Hexapod(val uuid: UUID) extends Entity with Hexapod.Pub with Logging {
   }
   def getEndpoints() = endpoint
   @Loggable
-  def updateAuth(publicKey: BigInt) {
-    authDiffieHellman.foreach {
-      dh =>
-        log.debug("update authentication parameters")
-        dh.setPeerPublicKey(publicKey)
-        authSessionKey = Some(dh.createSharedKey)
-        publish(Hexapod.Event.UpdateAuth(this))
-    }
+  def getDiffieHellman() = authDiffieHellman
+  @Loggable
+  def setDiffieHellman(g: Int, p: BigInt, publicKey: BigInt, secretKey: BigInt = 0): DiffieHellman = {
+    val dh = new DiffieHellman(g, p, secretKey, publicKey)
+    authDiffieHellman = Some(dh)
+    publish(Hexapod.Event.SetDiffieHellman(this))
+    dh
   }
   @Loggable
-  def setDiffieHellman(publicKey: BigInt, g: Int, p: BigInt): DiffieHellman = {
-    val dh = new DiffieHellman(g, p)
-    dh.createSecretKey()
-    authDiffieHellman = Some(dh)
-    updateAuth(publicKey)
-    dh
+  def getKeyForHexapod(peerHexapod: Hexapod): Option[(BigInt, Array[Byte])] = {
+    sessionKey.get(peerHexapod) match {
+      case result: Some[(BigInt, Array[Byte])] => result
+      case None =>
+        for {
+          localDiffieHellman <- getDiffieHellman
+          remoteDiffieHellman <- peerHexapod.getDiffieHellman
+        } yield {
+          val sharedKey = localDiffieHellman.getSharedKey(remoteDiffieHellman.publicKey)
+          val rawKey = Simple.getRawKey(sharedKey.toByteArray)
+          sessionKey(peerHexapod) = (sharedKey, rawKey)
+          (sharedKey, rawKey)
+        }
+    }
   }
   override def toString = "Hexapod[%08X]".format(this.hashCode())
 }
@@ -86,6 +98,7 @@ object Hexapod extends Logging {
     applicationHexapod = arg
   }
   def isInitialized(): Boolean = applicationHexapod != null
+  def instance() = applicationHexapod
 
   abstract class AppHexapod(override val uuid: UUID) extends Hexapod(uuid) with AbstractEndpoint with Logging {
     def receive(message: Message)
@@ -96,6 +109,6 @@ object Hexapod extends Logging {
   object Event {
     case class Connect(val endpoint: Endpoint) extends Event
     case class Disconnect(val endpoint: Endpoint) extends Event
-    case class UpdateAuth(val hexapod: Hexapod) extends Event
+    case class SetDiffieHellman(val hexapod: Hexapod) extends Event
   }
 }

@@ -22,6 +22,9 @@ import java.util.UUID
 
 import scala.ref.WeakReference
 
+import org.digimead.digi.lib.aop.Loggable
+import org.digimead.digi.lib.enc.{DiffieHellman => DiffieHellmanEnc}
+import org.digimead.digi.lib.enc.Simple
 import org.digimead.digi.lib.log.ConsoleLogger
 import org.digimead.digi.lib.log.Logging
 import org.digimead.digi.lib.log.Record
@@ -40,6 +43,7 @@ import org.scalatest.matchers.ShouldMatchers
 class PingTestMultiJvmNode1 extends FunSuite with BeforeAndAfter with ShouldMatchers {
   type FixtureParam = Map[String, Any]
   val log = Logging.commonLogger
+  @volatile private var init = false
 
   override def withFixture(test: OneArgTest) {
     try {
@@ -55,14 +59,16 @@ class PingTestMultiJvmNode1 extends FunSuite with BeforeAndAfter with ShouldMatc
     Record.init(new Record.DefaultInit)
     Logging.init(new Logging.DefaultInit)
     Logging.resume
-    Mesh.init(new Mesh.DefaultInit)
-    Peer.init(new Peer.DefaultInit)
-    Hexapod.init(new AppHexapod(UUID.randomUUID()))
-    Communication.init(new Communication.DefaultInit)
-    Ping.init(new Ping.DefaultInit)
-    DiffieHellmanReq.init(new DiffieHellmanReq.DefaultInit)
-    DiffieHellmanRes.init(new DiffieHellmanRes.DefaultInit)
-    Mesh.isReady
+    if (!init) {
+      init = true
+      Mesh.init(new Mesh.DefaultInit)
+      Peer.init(new Peer.DefaultInit)
+      Hexapod.init(new AppHexapod(UUID.randomUUID()))
+      Communication.init(new Communication.DefaultInit)
+      Ping.init(new Ping.DefaultInit)
+      DiffieHellman.init(new DiffieHellman.DefaultInit)
+      Mesh.isReady
+    }
   }
 
   after {
@@ -74,11 +80,11 @@ class PingTestMultiJvmNode1 extends FunSuite with BeforeAndAfter with ShouldMatc
       val sourceHexapod = new Hexapod(UUID.randomUUID())
       val destinationHexapod = new Hexapod(UUID.randomUUID())
       val transportEndpoint = new LoopbackEndpoint(new Endpoint.TransportIdentifier {}, new WeakReference(null), Endpoint.InOut)
-      val pingA = Ping(sourceHexapod.uuid, Some(destinationHexapod.uuid))
+      val pingA = Ping(sourceHexapod.uuid, Some(destinationHexapod.uuid))(true)
       val rawMessage = pingA.createRawMessage(sourceHexapod, destinationHexapod, None)
       rawMessage.length should be > (0)
       log.___glance("raw message length: " + rawMessage.length + " byte")
-      val deserializedMessage = Message.parseRawMessage(rawMessage) match {
+      val deserializedMessage = Message.parseRawMessage(rawMessage, false) match {
         case Some(message) =>
           log.debug("receive message \"%s\" from %s".format(message.word, message.sourceHexapod))
           Some(message)
@@ -91,5 +97,38 @@ class PingTestMultiJvmNode1 extends FunSuite with BeforeAndAfter with ShouldMatc
       log.___glance("original ping: " + pingA)
       log.___glance("(de)serialized ping: " + pingB)
       assert(pingA.toString === pingB.toString)
+  }
+
+  test("ping encripted (de)serialization test") {
+    conf =>
+      val dhPeer = new DiffieHellmanEnc(5, DiffieHellmanEnc.randomPrime(128))
+      val sourceHexapod = new Hexapod(UUID.randomUUID())
+      val transportEndpoint = new LoopbackEndpoint(new Endpoint.TransportIdentifier {}, new WeakReference(null), Endpoint.InOut)
+      val pingA = Ping(sourceHexapod.uuid, Some(Hexapod.instance.uuid))(true)
+      pingA.distance should be (0)
+      val sharedKey = Hexapod.getDiffieHellman.get.getSharedKey(dhPeer.publicKey)
+      val rawMessage = pingA.createRawMessage(sourceHexapod, Hexapod.instance, Some(Simple.getRawKey(sharedKey.toByteArray)))
+      rawMessage.length should be > (0)
+      log.___glance("raw message length: " + rawMessage.length + " byte")
+      val emptyMessage = Message.parseRawMessage(rawMessage, false) match {
+        case Some(message) =>
+          log.debug("receive message \"%s\" from %s".format(message.word, message.sourceHexapod))
+          Some(message)
+        case None =>
+          None
+      }
+      assert(emptyMessage === None)
+      Hexapod.getDiffieHellman should not be ('empty)
+      sourceHexapod.setDiffieHellman(dhPeer.g, dhPeer.p, dhPeer.publicKey)
+      val deserializedMessage = Message.parseRawMessage(rawMessage, false) match {
+        case Some(message) =>
+          log.debug("receive message \"%s\" from %s".format(message.word, message.sourceHexapod))
+          Some(message)
+        case None =>
+          None
+      }
+      deserializedMessage should not be ('empty)
+      deserializedMessage.get.distance should be (1)
+      assert(deserializedMessage=== Some(pingA))
   }
 }

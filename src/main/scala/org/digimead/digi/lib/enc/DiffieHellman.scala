@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 
-package org.digimead.digi.lib.auth
+package org.digimead.digi.lib.enc
 
 import scala.math.BigInt.int2bigInt
 import scala.util.Random
@@ -24,23 +24,14 @@ import scala.util.Random
 import org.digimead.digi.lib.aop.Loggable
 import org.digimead.digi.lib.log.Logging
 
-class DiffieHellman(val g: Int, val p: BigInt) extends Logging {
-  @volatile var secretKey: BigInt = 0
-  @volatile var peerPublicKey: BigInt = 0
-
+class DiffieHellman(val g: Int, val p: BigInt, val secretKey: BigInt, val publicKey: BigInt) extends Logging {
+  def this(g: Int, p: BigInt, secretKey: BigInt) = this(g, p, secretKey, DiffieHellman.doExpMod(g, secretKey, p))
+  def this(g: Int, p: BigInt) = this(g, p, DiffieHellman.randomPrime(128))
   @Loggable
-  def createSecretKey(): BigInt = {
-    secretKey = DiffieHellman.random(128)
-    secretKey
+  def getSharedKey(peerPublicKey: BigInt): BigInt = {
+    assert(secretKey != 0, "secret key not found")
+    DiffieHellman.doExpMod(peerPublicKey, secretKey, p)
   }
-  @Loggable
-  def setPeerPublicKey(x: BigInt) = peerPublicKey = x
-  @Loggable
-  def getPublicKey(): BigInt = doExpMod(g, secretKey, p)
-  @Loggable
-  def createSharedKey(): BigInt = doExpMod(peerPublicKey, secretKey, p)
-  private def doExpMod(x: BigInt): BigInt = doExpMod(g, x, p)
-  private def doExpMod(g: BigInt, x: BigInt, m: BigInt): BigInt = g.modPow(x, m)
 }
 
 object DiffieHellman {
@@ -54,4 +45,5 @@ object DiffieHellman {
     val rnd = new Random()
     BigInt(n, rnd)
   }
+  def doExpMod(g: BigInt, x: BigInt, m: BigInt): BigInt = g.modPow(x, m)
 }

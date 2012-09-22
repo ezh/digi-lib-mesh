@@ -41,23 +41,22 @@ import org.digimead.digi.lib.mesh.hexapod.Hexapod
 import org.digimead.digi.lib.mesh.hexapod.Hexapod.hexapod2app
 import org.digimead.digi.lib.util.Util
 
-case class DiffieHellmanReq(val publicKey: BigInt, val g: Int, val p: BigInt,
+case class DiffieHellman(val key: BigInt, val g: Int, val p: BigInt,
   override val sourceHexapod: UUID,
   override val destinationHexapod: Option[UUID] = None,
-  override val timeToLive: Long = Communication.holdTimeToLive,
   override val conversation: UUID = UUID.randomUUID(),
-  override val timestamp: Long = System.currentTimeMillis())
-  extends Message(DiffieHellmanReq.word, true, sourceHexapod, destinationHexapod, conversation, timeToLive, timestamp) {
+  override val timestamp: Long = System.currentTimeMillis())(val isReplyRequired: Boolean, override val distance: Byte = 0)
+  extends Message(DiffieHellman.word, sourceHexapod, destinationHexapod, conversation, timestamp) {
   val messageType = Message.Type.Unencripted
-  DiffieHellmanReq.log.debug("alive %s %s %s".format(this, conversation, Util.dateString(new Date(timestamp))))
+  DiffieHellman.log.debug("alive %s %s %s".format(this, conversation, Util.dateString(new Date(timestamp))))
 
   def content(): Array[Byte] = {
-    val publicKeyBytes = publicKey.toByteArray
+    val keyBytes = key.toByteArray
     val pBytes = p.toByteArray
     val baos = new ByteArrayOutputStream()
     val w = new DataOutputStream(baos)
-    w.writeInt(publicKeyBytes.length)
-    w.write(publicKeyBytes, 0, publicKeyBytes.length)
+    w.writeInt(keyBytes.length)
+    w.write(keyBytes, 0, keyBytes.length)
     w.writeInt(g)
     w.writeInt(pBytes.length)
     w.write(pBytes, 0, pBytes.length)
@@ -67,23 +66,31 @@ case class DiffieHellmanReq(val publicKey: BigInt, val g: Int, val p: BigInt,
     data
   }
   def react(stimulus: Stimulus) = stimulus match {
-    case Stimulus.IncomingMessage(message @ DiffieHellmanRes(publicKey, _, _, _, _, _)) if message.conversation == conversation =>
+    case Stimulus.IncomingMessage(message @ DiffieHellman(key, 0, _, _, _, _, _)) if message.conversation == conversation =>
       Mesh(sourceHexapod) match {
         case Some(source: AppHexapod) =>
-          source.updateAuth(publicKey)
-          Some(true)
+          Mesh(message.sourceHexapod) match {
+            case Some(hexapod: Hexapod) =>
+              assert(hexapod.uuid != sourceHexapod, "illegal to update of source hexapod")
+              hexapod.setDiffieHellman(0, 0, key)
+              Communication.processMessages
+              Some(true)
+            case None =>
+              DiffieHellman.log.error("unable to update unexists hexapod " + message.sourceHexapod)
+              Some(false)
+          }
         case _ =>
-          DiffieHellmanReq.log.error("unable to find source hexapod " + sourceHexapod)
+          DiffieHellman.log.error("unable to find source hexapod " + sourceHexapod)
           Some(false)
       }
     case _ =>
       None
   }
-  override def toString = "DiffieHellmanReq[%08X %s]".format(this.hashCode(), labelSuffix)
+  override def toString = "DiffieHellman[%08X %s]".format(conversation.hashCode(), labelSuffix)
 }
 
-class DiffieHellmanReqBuilder extends Message.MessageBuilder with Logging {
-  def buildMessage(from: Hexapod, to: Hexapod, conversation: UUID, timestamp: Long, word: String, content: Array[Byte]): Option[Message] = try {
+class DiffieHellmanBuilder extends Message.MessageBuilder with Logging {
+  def buildMessage(from: Hexapod, to: Hexapod, conversation: UUID, timestamp: Long, word: String, distance: Byte, content: Array[Byte]): Option[Message] = try {
     val bais = new ByteArrayInputStream(content)
     val r = new DataInputStream(bais)
     val publicKeyLength = r.readInt()
@@ -98,7 +105,7 @@ class DiffieHellmanReqBuilder extends Message.MessageBuilder with Logging {
     assert(actualPLength == pLength)
     val p = new BigInt(new java.math.BigInteger(pBytes))
     r.close()
-    Some(DiffieHellmanReq(publicKey, g, p, from.uuid, Some(to.uuid), Communication.holdTimeToLive, conversation, timestamp))
+    Some(DiffieHellman(publicKey, g, p, from.uuid, Some(to.uuid), conversation, timestamp)(false, distance))
   } catch {
     case e =>
       log.warn(e.getMessage())
@@ -106,19 +113,22 @@ class DiffieHellmanReqBuilder extends Message.MessageBuilder with Logging {
   }
 }
 
-class DiffieHellmanReqReceptor extends Receptor {
+class DiffieHellmanReceptor extends Receptor {
   def react(stimulus: Stimulus) = stimulus match {
-    case Stimulus.IncomingMessage(message @ DiffieHellmanReq(publicKey, g, p, _, _, _, conversation, _)) =>
+    case Stimulus.IncomingMessage(message @ DiffieHellman(publicKey, g, p, _, _, conversation, _)) if g != 0 =>
       Mesh(message.sourceHexapod) match {
-        case Some(source: Hexapod) =>
-          DiffieHellmanReq.log.debug("generate new DiffieHellmanRes for %s from %s".format(source, DiffieHellmanReq.word))
-          val dh = source.setDiffieHellman(publicKey, g, p)
+        case Some(source: Hexapod) if Hexapod.getDiffieHellman.nonEmpty =>
+          DiffieHellman.log.debug("generate DiffieHellman response for %s".format(source))
+          val dh = source.setDiffieHellman(g, p, publicKey)
           val responseSource = message.destinationHexapod.getOrElse(Hexapod.uuid)
           val responseDestination = Some(source.uuid)
-          Communication.push(DiffieHellmanRes(dh.getPublicKey, responseSource, responseDestination, conversation))
+          Communication.push(DiffieHellman(dh.publicKey, 0, 0, responseSource, responseDestination, conversation)(false))
           Some(true)
+        case Some(source: Hexapod) =>
+          DiffieHellman.log.error(Hexapod + " DiffieHellman parameter is absent")
+          Some(false)
         case None =>
-          DiffieHellmanReq.log.error("unable to find source hexapod " + message.sourceHexapod)
+          DiffieHellman.log.error("unable to find source hexapod " + message.sourceHexapod)
           Some(false)
       }
     case _ =>
@@ -126,14 +136,14 @@ class DiffieHellmanReqReceptor extends Receptor {
   }
 }
 
-object DiffieHellmanReq extends Logging {
-  val word = "dh_req"
+object DiffieHellman extends Logging {
+  val word = "dh"
   private val initializationArgument = new AtomicReference[Option[Init]](None)
 
   def init(arg: Init): Unit = synchronized {
-    assert(!isInitialized, "DiffieHellmanReq already initialized")
+    assert(!isInitialized, "DiffieHellman already initialized")
     assert(Communication.isInitialized, "Communication not initialized")
-    log.debug("initialize DiffieHellmanReq")
+    log.debug("initialize DiffieHellman")
     initializationArgument.set(Some(arg))
     Message.add(word, arg.builder)
     Communication.registerGlobal(arg.receptor)
@@ -145,7 +155,7 @@ object DiffieHellmanReq extends Logging {
     val receptor: Receptor
   }
   class DefaultInit extends Init {
-    val builder: Message.MessageBuilder = new DiffieHellmanReqBuilder
-    val receptor: Receptor = new DiffieHellmanReqReceptor
+    val builder: Message.MessageBuilder = new DiffieHellmanBuilder
+    val receptor: Receptor = new DiffieHellmanReceptor
   }
 }

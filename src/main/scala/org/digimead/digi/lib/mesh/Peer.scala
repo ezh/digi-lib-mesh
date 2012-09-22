@@ -18,15 +18,15 @@
 
 package org.digimead.digi.lib.mesh
 
+import scala.Option.option2Iterable
 import scala.collection.mutable.ArrayBuffer
 import scala.collection.mutable.Buffer
 import scala.collection.mutable.Publisher
 import scala.collection.mutable.SynchronizedBuffer
+
 import org.digimead.digi.lib.log.Logging
-import org.digimead.digi.lib.mesh.hexapod.Hexapod
-import org.digimead.digi.lib.mesh.message.DiffieHellmanReq
-import org.digimead.digi.lib.mesh.message.DiffieHellmanRes
 import org.digimead.digi.lib.mesh.endpoint.Endpoint
+import org.digimead.digi.lib.mesh.hexapod.Hexapod
 
 class Peer extends Peer.Interface with Logging {
   protected val pool = new ArrayBuffer[Hexapod] with SynchronizedBuffer[Hexapod]
