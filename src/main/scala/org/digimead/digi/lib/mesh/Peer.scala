@@ -59,7 +59,7 @@ class Peer extends Peer.Interface {
 object Peer extends Logging {
   type Pub = Publisher[Event]
   type Sub = Subscriber[Event, Pub]
-  implicit def hub2implementation(h: Peer.type): Interface = h.implementation
+  implicit def peer2implementation(p: Peer.type): Interface = p.implementation
   private var implementation: Interface = null
 
   def init(arg: Init): Unit = synchronized {
