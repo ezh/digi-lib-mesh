@@ -19,24 +19,20 @@
 package org.digimead.digi.lib.enc
 
 import org.digimead.digi.lib.aop.Loggable
-import org.digimead.digi.lib.log.ConsoleLogger
 import org.digimead.digi.lib.log.Logging
 import org.digimead.digi.lib.log.Record
+import org.digimead.lib.test.TestHelperLogging
 import org.scalatest.BeforeAndAfter
 import org.scalatest.fixture.FunSuite
 import org.scalatest.matchers.ShouldMatchers
 
-class SimpleTestMultiJvmNode1 extends FunSuite with ShouldMatchers with BeforeAndAfter {
+class SimpleTest_j1 extends FunSuite with ShouldMatchers with BeforeAndAfter with TestHelperLogging {
   type FixtureParam = Map[String, Any]
   val log = Logging.commonLogger
 
   override def withFixture(test: OneArgTest) {
-    try {
-      if (test.configMap.contains("log") || System.getProperty("log") != null)
-        Logging.addLogger(ConsoleLogger)
+    withLogging(test.configMap) {
       test(test.configMap)
-    } finally {
-      Logging.delLogger(ConsoleLogger)
     }
   }
 

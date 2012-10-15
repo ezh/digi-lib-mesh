@@ -23,11 +23,11 @@ import java.util.UUID
 import scala.ref.WeakReference
 
 import org.digimead.digi.lib.aop.Loggable
-import org.digimead.digi.lib.enc.{DiffieHellman => DiffieHellmanEnc}
+import org.digimead.digi.lib.enc.{ DiffieHellman => DiffieHellmanEnc }
 import org.digimead.digi.lib.enc.Simple
-import org.digimead.digi.lib.log.ConsoleLogger
 import org.digimead.digi.lib.log.Logging
 import org.digimead.digi.lib.log.Record
+import org.digimead.digi.lib.log.logger.RichLogger.rich2slf4j
 import org.digimead.digi.lib.mesh.Mesh
 import org.digimead.digi.lib.mesh.Peer
 import org.digimead.digi.lib.mesh.communication.Communication
@@ -36,22 +36,20 @@ import org.digimead.digi.lib.mesh.endpoint.Endpoint
 import org.digimead.digi.lib.mesh.endpoint.LoopbackEndpoint
 import org.digimead.digi.lib.mesh.hexapod.AppHexapod
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
+import org.digimead.digi.lib.mesh.hexapod.Hexapod.hexapod2app
+import org.digimead.lib.test.TestHelperLogging
 import org.scalatest.BeforeAndAfter
 import org.scalatest.fixture.FunSuite
 import org.scalatest.matchers.ShouldMatchers
 
-class PingTestMultiJvmNode1 extends FunSuite with BeforeAndAfter with ShouldMatchers {
+class PingTest_j1 extends FunSuite with BeforeAndAfter with ShouldMatchers with TestHelperLogging {
   type FixtureParam = Map[String, Any]
   val log = Logging.commonLogger
   @volatile private var init = false
 
   override def withFixture(test: OneArgTest) {
-    try {
-      if (test.configMap.contains("log") || System.getProperty("log") != null)
-        Logging.addLogger(ConsoleLogger)
+    withLogging(test.configMap) {
       test(test.configMap)
-    } finally {
-      Logging.delLogger(ConsoleLogger)
     }
   }
 
@@ -105,7 +103,7 @@ class PingTestMultiJvmNode1 extends FunSuite with BeforeAndAfter with ShouldMatc
       val sourceHexapod = new Hexapod(UUID.randomUUID())
       val transportEndpoint = new LoopbackEndpoint(new Endpoint.TransportIdentifier {}, new WeakReference(null), Endpoint.InOut)
       val pingA = Ping(sourceHexapod.uuid, Some(Hexapod.instance.uuid))(true)
-      pingA.distance should be (0)
+      pingA.distance should be(0)
       val sharedKey = Hexapod.getDiffieHellman.get.getSharedKey(dhPeer.publicKey)
       val rawMessage = pingA.createRawMessage(sourceHexapod, Hexapod.instance, Some(Simple.getRawKey(sharedKey.toByteArray)))
       rawMessage.length should be > (0)
@@ -128,7 +126,7 @@ class PingTestMultiJvmNode1 extends FunSuite with BeforeAndAfter with ShouldMatc
           None
       }
       deserializedMessage should not be ('empty)
-      deserializedMessage.get.distance should be (1)
-      assert(deserializedMessage=== Some(pingA))
+      deserializedMessage.get.distance should be(1)
+      assert(deserializedMessage === Some(pingA))
   }
 }

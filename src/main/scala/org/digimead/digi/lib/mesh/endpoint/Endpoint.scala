@@ -26,9 +26,10 @@ import scala.ref.WeakReference
 import org.digimead.digi.lib.aop.Loggable
 import org.digimead.digi.lib.enc.Simple
 import org.digimead.digi.lib.log.Logging
+import org.digimead.digi.lib.log.logger.RichLogger.rich2slf4j
 import org.digimead.digi.lib.mesh.Mesh
 import org.digimead.digi.lib.mesh.Peer
-import org.digimead.digi.lib.mesh.Peer.hub2implementation
+import org.digimead.digi.lib.mesh.Peer.peer2implementation
 import org.digimead.digi.lib.mesh.communication.Communication
 import org.digimead.digi.lib.mesh.communication.Communication.communication2implementation
 import org.digimead.digi.lib.mesh.communication.Message

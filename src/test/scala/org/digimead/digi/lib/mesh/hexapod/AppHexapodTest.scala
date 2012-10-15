@@ -21,27 +21,23 @@ package org.digimead.digi.lib.mesh.hexapod
 import java.util.UUID
 
 import org.digimead.digi.lib.aop.Loggable
-import org.digimead.digi.lib.log.ConsoleLogger
 import org.digimead.digi.lib.log.Logging
 import org.digimead.digi.lib.log.Record
 import org.digimead.digi.lib.mesh.Mesh
 import org.digimead.digi.lib.mesh.Mesh.mesh2implementation
 import org.digimead.digi.lib.mesh.Peer
+import org.digimead.lib.test.TestHelperLogging
 import org.scalatest.BeforeAndAfter
 import org.scalatest.fixture.FunSuite
 import org.scalatest.matchers.ShouldMatchers
 
-class AppHexapodTestMultiJvmNode1 extends FunSuite with BeforeAndAfter with ShouldMatchers {
+class AppHexapodTest_j1 extends FunSuite with BeforeAndAfter with ShouldMatchers with TestHelperLogging {
   type FixtureParam = Map[String, Any]
   val log = Logging.commonLogger
 
   override def withFixture(test: OneArgTest) {
-    try {
-      if (test.configMap.contains("log") || System.getProperty("log") != null)
-        Logging.addLogger(ConsoleLogger)
+    withLogging(test.configMap) {
       test(test.configMap)
-    } finally {
-      Logging.delLogger(ConsoleLogger)
     }
   }
 

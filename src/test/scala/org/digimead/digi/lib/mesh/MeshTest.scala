@@ -26,10 +26,9 @@ import scala.ref.WeakReference
 
 import org.digimead.digi.lib.EventPublisher
 import org.digimead.digi.lib.aop.Loggable
-import org.digimead.digi.lib.log.ConsoleLogger
 import org.digimead.digi.lib.log.Logging
 import org.digimead.digi.lib.log.Record
-import org.digimead.digi.lib.mesh.Peer.hub2implementation
+import org.digimead.digi.lib.mesh.Peer.peer2implementation
 import org.digimead.digi.lib.mesh.communication.Communication
 import org.digimead.digi.lib.mesh.communication.Communication.communication2implementation
 import org.digimead.digi.lib.mesh.endpoint.Endpoint
@@ -40,22 +39,19 @@ import org.digimead.digi.lib.mesh.hexapod.Hexapod
 import org.digimead.digi.lib.mesh.hexapod.Hexapod.hexapod2app
 import org.digimead.digi.lib.mesh.message.DiffieHellman
 import org.digimead.digi.lib.mesh.message.Ping
-import org.digimead.digi.lib.test.DigiTestHelper
+import org.digimead.lib.test.TestHelperLogging
+import org.digimead.lib.test.TestHelperMatchers
 import org.scalatest.BeforeAndAfter
 import org.scalatest.fixture.FunSuite
 import org.scalatest.matchers.ShouldMatchers
 
-class MeshTestMultiJvmNode1 extends FunSuite with ShouldMatchers with BeforeAndAfter with DigiTestHelper {
+class MeshTest_j1 extends FunSuite with ShouldMatchers with BeforeAndAfter with TestHelperLogging with TestHelperMatchers {
   type FixtureParam = Map[String, Any]
   val log = Logging.commonLogger
 
   override def withFixture(test: OneArgTest) {
-    try {
-      if (test.configMap.contains("log") || System.getProperty("log") != null)
-        Logging.addLogger(ConsoleLogger)
+    withLogging(test.configMap) {
       test(test.configMap)
-    } finally {
-      Logging.delLogger(ConsoleLogger)
     }
   }
 
@@ -118,7 +114,7 @@ class MeshTestMultiJvmNode1 extends FunSuite with ShouldMatchers with BeforeAndA
 
       Communication.push(Ping(local.uuid, None)(true))
 
-      test(events.dequeue) { case Communication.Event.Add(msg: Ping) => }
+      expectDefined(events.dequeue) { case Communication.Event.Add(msg: Ping) => }
 
       comm.getBuffer should have size (1)
       comm.getBuffer.forall(_._2.condition == Communication.Condition.Pending)
@@ -136,9 +132,9 @@ class MeshTestMultiJvmNode1 extends FunSuite with ShouldMatchers with BeforeAndA
       localEndpointOut.connected should equal(true)
       log.___glance("ENDPOINT CONNECTED")
 
-      test(events.dequeue) { case Hexapod.Event.Connect(ep: UDPEndpoint) => }
+      expectDefined(events.dequeue) { case Hexapod.Event.Connect(ep: UDPEndpoint) => }
 
-      test(events.dequeue) { case Hexapod.Event.Connect(ep: UDPEndpoint) => }
+      expectDefined(events.dequeue) { case Hexapod.Event.Connect(ep: UDPEndpoint) => }
 
       events should have size (0)
 
@@ -147,9 +143,9 @@ class MeshTestMultiJvmNode1 extends FunSuite with ShouldMatchers with BeforeAndA
       val remoteEndpointIn = new UDPRemoteEndpoint(UDPEndpoint.TransportIdentifier(Some(InetAddress.getLocalHost()), Some(23457)), new WeakReference(remote), Endpoint.In)
       Peer.add(remote)
 
-      test(events.dequeue) { case Communication.Event.Add(msg: DiffieHellman) => }
+      expectDefined(events.dequeue) { case Communication.Event.Add(msg: DiffieHellman) => }
 
-      test(events.dequeue) { case Communication.Event.Sent(msg: DiffieHellman) => }
+      expectDefined(events.dequeue) { case Communication.Event.Sent(msg: DiffieHellman) => }
 
       comm.getBuffer(DiffieHellman.word).condition should be(Communication.Condition.Sent)
       comm.getBuffer(DiffieHellman.word).counter should be(1)
@@ -170,7 +166,7 @@ class MeshTestMultiJvmNode1 extends FunSuite with ShouldMatchers with BeforeAndA
        */
       Thread.sleep(1000)
       Communication.processMessages
-      test(events.dequeue) { case Communication.Event.Sent(msg: DiffieHellman) => }
+      expectDefined(events.dequeue) { case Communication.Event.Sent(msg: DiffieHellman) => }
       events should have size (0)
 
       /*
@@ -178,7 +174,7 @@ class MeshTestMultiJvmNode1 extends FunSuite with ShouldMatchers with BeforeAndA
        */
       Thread.sleep(1000)
       Communication.processMessages
-      test(events.dequeue) { case Communication.Event.Sent(msg: DiffieHellman) => }
+      expectDefined(events.dequeue) { case Communication.Event.Sent(msg: DiffieHellman) => }
       events should have size (0)
 
       /*
@@ -187,9 +183,9 @@ class MeshTestMultiJvmNode1 extends FunSuite with ShouldMatchers with BeforeAndA
       Thread.sleep(1000)
       Communication.processMessages
 
-      test(events.dequeue) { case Communication.Event.Fail(msg: DiffieHellman) => }
+      expectDefined(events.dequeue) { case Communication.Event.Fail(msg: DiffieHellman) => }
 
-      test(events.dequeue) { case Communication.Event.Fail(msg: Ping) => }
+      expectDefined(events.dequeue) { case Communication.Event.Fail(msg: Ping) => }
 
       events should have size (0)
       comm.getBuffer should have size (0)
@@ -201,11 +197,11 @@ class MeshTestMultiJvmNode1 extends FunSuite with ShouldMatchers with BeforeAndA
       Communication.push(Ping(local.uuid, None)(true))
       Communication.processMessages
 
-      test(events.dequeue) { case Communication.Event.Add(msg: Ping) => }
+      expectDefined(events.dequeue) { case Communication.Event.Add(msg: Ping) => }
 
-      test(events.dequeue) { case Communication.Event.Add(msg: DiffieHellman) => }
+      expectDefined(events.dequeue) { case Communication.Event.Add(msg: DiffieHellman) => }
 
-      test(events.dequeue) { case Communication.Event.Sent(msg: DiffieHellman) => }
+      expectDefined(events.dequeue) { case Communication.Event.Sent(msg: DiffieHellman) => }
 
       events should have size (0)
 
@@ -219,19 +215,19 @@ class MeshTestMultiJvmNode1 extends FunSuite with ShouldMatchers with BeforeAndA
       events.dequeueAll(_ => true) should have size (1)
 
       // receive acknowledgement
-      test(comm.waitEvent(5000)) { case Some(Communication.Event.Delivered(message: DiffieHellman)) => }
+      expectDefined(comm.waitEvent(5000)) { case Some(Communication.Event.Delivered(message: DiffieHellman)) => }
 
       // receive DiffieHellman response(event #1, update keys, trying to send all pending messages, that require encryption)
-      test(comm.nextEvent(5000)) { case Some(Communication.Event.Sent(message: Ping)) => }
+      expectDefined(comm.nextEvent(5000)) { case Some(Communication.Event.Sent(message: Ping)) => }
 
       // receive DiffieHellman response(event #2)
-      test(comm.nextEvent(5000)) { case Some(Communication.Event.Success(message: DiffieHellman)) => }
+      expectDefined(comm.nextEvent(5000)) { case Some(Communication.Event.Success(message: DiffieHellman)) => }
 
       // receive acknowledgement
-      test(comm.nextEvent(5000)) { case Some(Communication.Event.Delivered(message: Ping)) => }
+      expectDefined(comm.nextEvent(5000)) { case Some(Communication.Event.Delivered(message: Ping)) => }
 
       // receive Ping response
-      test(comm.nextEvent(5000)) { case Some(Communication.Event.Success(message: Ping)) => }
+      expectDefined(comm.nextEvent(5000)) { case Some(Communication.Event.Success(message: Ping)) => }
 
       comm.getBuffer should have size (0)
 
@@ -239,17 +235,13 @@ class MeshTestMultiJvmNode1 extends FunSuite with ShouldMatchers with BeforeAndA
   }
 }
 
-class MeshTestMultiJvmNode2 extends FunSuite with ShouldMatchers with BeforeAndAfter with DigiTestHelper {
+class MeshTest_j2 extends FunSuite with ShouldMatchers with BeforeAndAfter with TestHelperLogging with TestHelperMatchers {
   type FixtureParam = Map[String, Any]
   val log = Logging.commonLogger
 
   override def withFixture(test: OneArgTest) {
-    try {
-      if (test.configMap.contains("log") || System.getProperty("log") != null)
-        Logging.addLogger(ConsoleLogger)
+    withLogging(test.configMap) {
       test(test.configMap)
-    } finally {
-      Logging.delLogger(ConsoleLogger)
     }
   }
 
@@ -320,16 +312,16 @@ class MeshTestMultiJvmNode2 extends FunSuite with ShouldMatchers with BeforeAndA
       local.connect()
 
       // receive DiffieHellman request(event #1)
-      test(comm.waitEvent(5000)) { case Some(Communication.Event.Add(message: DiffieHellman)) => }
+      expectDefined(comm.waitEvent(5000)) { case Some(Communication.Event.Add(message: DiffieHellman)) => }
 
       // receive DiffieHellman request(event #2)
-      test(comm.nextEvent(5000)) { case Some(Communication.Event.Sent(message: DiffieHellman)) => }
+      expectDefined(comm.nextEvent(5000)) { case Some(Communication.Event.Sent(message: DiffieHellman)) => }
 
       // receive acknowledgement(event #1)
-      test(comm.nextEvent(5000)) { case Some(Communication.Event.Delivered(message: DiffieHellman)) => }
+      expectDefined(comm.nextEvent(5000)) { case Some(Communication.Event.Delivered(message: DiffieHellman)) => }
 
       // receive acknowledgement(event #2)
-      test(comm.nextEvent(5000)) { case Some(Communication.Event.Success(message: DiffieHellman)) => }
+      expectDefined(comm.nextEvent(5000)) { case Some(Communication.Event.Success(message: DiffieHellman)) => }
 
       Mesh(Common.node1UUID) match {
         case Some(hexapod: Hexapod) =>
@@ -342,13 +334,13 @@ class MeshTestMultiJvmNode2 extends FunSuite with ShouldMatchers with BeforeAndA
       }
 
       // receive Ping request(event #1)
-      test(comm.nextEvent(5000)) { case Some(Communication.Event.Add(message: Ping)) if message.isReplyRequired == false => }
+      expectDefined(comm.nextEvent(5000)) { case Some(Communication.Event.Add(message: Ping)) if message.isReplyRequired == false => }
 
       // receive Ping request(event #2)
-      test(comm.nextEvent(5000)) { case Some(Communication.Event.Sent(message: Ping)) => }
+      expectDefined(comm.nextEvent(5000)) { case Some(Communication.Event.Sent(message: Ping)) => }
 
       // receive acknowledgement
-      test(comm.nextEvent(5000)) { case Some(Communication.Event.Success(message: Ping)) => }
+      expectDefined(comm.nextEvent(5000)) { case Some(Communication.Event.Success(message: Ping)) => }
 
       Thread.sleep(1000)
   }

@@ -19,28 +19,26 @@
 package org.digimead.digi.lib.mesh.communication
 
 import java.util.UUID
-import org.digimead.digi.lib.log.ConsoleLogger
+
 import org.digimead.digi.lib.log.Logging
 import org.digimead.digi.lib.log.Record
+import org.digimead.digi.lib.log.logger.RichLogger.rich2slf4j
+import org.digimead.digi.lib.mesh.Mesh
 import org.digimead.digi.lib.mesh.message.Ping
 import org.digimead.digi.lib.util.Serialization
+import org.digimead.lib.test.TestHelperLogging
 import org.scalatest.BeforeAndAfter
 import org.scalatest.fixture.FunSuite
 import org.scalatest.matchers.ShouldMatchers.convertToAnyRefShouldWrapper
 import org.scalatest.matchers.ShouldMatchers.convertToLongShouldWrapper
 import org.scalatest.matchers.ShouldMatchers.equal
-import org.digimead.digi.lib.mesh.Mesh
 
-class MessageTestMultiJvmNode1 extends FunSuite with BeforeAndAfter {
+class MessageTest_j1 extends FunSuite with BeforeAndAfter with TestHelperLogging {
   type FixtureParam = Map[String, Any]
 
   override def withFixture(test: OneArgTest) {
-    try {
-      if (test.configMap.contains("log") || System.getProperty("log") != null)
-        Logging.addLogger(ConsoleLogger)
+    withLogging(test.configMap) {
       test(test.configMap)
-    } finally {
-      Logging.delLogger(ConsoleLogger)
     }
   }
 
