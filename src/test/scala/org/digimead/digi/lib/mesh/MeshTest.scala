@@ -18,7 +18,7 @@
 
 package org.digimead.digi.lib.mesh
 
-import java.net.InetAddress
+/*import java.net.InetAddress
 import java.util.UUID
 
 import scala.collection.mutable.SynchronizedQueue
@@ -26,7 +26,7 @@ import scala.ref.WeakReference
 
 import org.digimead.digi.lib.EventPublisher
 import org.digimead.digi.lib.aop.Loggable
-import org.digimead.digi.lib.log.Logging
+import org.digimead.digi.lib.log.Loggable
 import org.digimead.digi.lib.log.Record
 import org.digimead.digi.lib.mesh.Peer.peer2implementation
 import org.digimead.digi.lib.mesh.communication.Communication
@@ -73,7 +73,7 @@ class MeshTest_j1 extends FunSuite with ShouldMatchers with BeforeAndAfter with 
       Mesh.init(new Mesh.DefaultInit)
       Peer.init(new Peer.DefaultInit)
       val local = new AppHexapod(Common.node1UUID)
-      val localEndpointIn = new UDPEndpoint(UDPEndpoint.TransportIdentifier(Some(InetAddress.getLocalHost()), Some(23456)), new WeakReference(local), Endpoint.In)
+      val localEndpointIn = new UDPEndpoint(UDPEndpoint.TransportIdentifier(Some(InetAddress.getLocalHost()), Some(23456)), new WeakReference(local), Endpoint.Direction.In)
       val localEndpointOut = new UDPEndpoint(UDPEndpoint.TransportIdentifier(), new WeakReference(local), Endpoint.Out)
       Hexapod.init(local)
       val comm = new Communication with EventPublisher[Communication.Event] {
@@ -140,7 +140,7 @@ class MeshTest_j1 extends FunSuite with ShouldMatchers with BeforeAndAfter with 
 
       log.___glance("ADD REMOTE PEER")
       val remote = new Hexapod(Common.node2UUID)
-      val remoteEndpointIn = new UDPRemoteEndpoint(UDPEndpoint.TransportIdentifier(Some(InetAddress.getLocalHost()), Some(23457)), new WeakReference(remote), Endpoint.In)
+      val remoteEndpointIn = new UDPRemoteEndpoint(UDPEndpoint.TransportIdentifier(Some(InetAddress.getLocalHost()), Some(23457)), new WeakReference(remote), Endpoint.Direction.In)
       Peer.add(remote)
 
       expectDefined(events.dequeue) { case Communication.Event.Add(msg: DiffieHellman) => }
@@ -263,7 +263,7 @@ class MeshTest_j2 extends FunSuite with ShouldMatchers with BeforeAndAfter with 
       Mesh.init(new Mesh.DefaultInit)
       Peer.init(new Peer.DefaultInit)
       val local = new AppHexapod(Common.node2UUID)
-      val localEndpointIn = new UDPEndpoint(UDPEndpoint.TransportIdentifier(Some(InetAddress.getLocalHost()), Some(23457)), new WeakReference(local), Endpoint.In)
+      val localEndpointIn = new UDPEndpoint(UDPEndpoint.TransportIdentifier(Some(InetAddress.getLocalHost()), Some(23457)), new WeakReference(local), Endpoint.Direction.In)
       val localEndpointOut = new UDPEndpoint(UDPEndpoint.TransportIdentifier(), new WeakReference(local), Endpoint.Out)
       Hexapod.init(local)
       val comm = new Communication with EventPublisher[Communication.Event] {
@@ -303,7 +303,7 @@ class MeshTest_j2 extends FunSuite with ShouldMatchers with BeforeAndAfter with 
       val remote = new Hexapod(Common.node1UUID) {
         def getAuthDiffieHellman = authDiffieHellman
       }
-      val remoteEndpointIn = new UDPRemoteEndpoint(UDPEndpoint.TransportIdentifier(Some(InetAddress.getLocalHost()), Some(23456)), new WeakReference(remote), Endpoint.In)
+      val remoteEndpointIn = new UDPRemoteEndpoint(UDPEndpoint.TransportIdentifier(Some(InetAddress.getLocalHost()), Some(23456)), new WeakReference(remote), Endpoint.Direction.In)
       Peer.add(remote)
       log.___glance("REMOTE PEER ADDED")
 
@@ -350,3 +350,4 @@ object Common {
   val node1UUID = UUID.fromString("00000000-0000-0000-0000-000000000001")
   val node2UUID = UUID.fromString("00000000-0000-0000-0000-000000000002")
 }
+*/

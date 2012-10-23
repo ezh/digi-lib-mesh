@@ -18,12 +18,12 @@
 
 package org.digimead.digi.lib.mesh.message
 
-import java.util.UUID
+/*import java.util.UUID
 
 import scala.math.BigInt.int2bigInt
 import scala.ref.WeakReference
 
-import org.digimead.digi.lib.log.Logging
+import org.digimead.digi.lib.log.Loggable
 import org.digimead.digi.lib.log.Record
 import org.digimead.digi.lib.log.logger.RichLogger.rich2slf4j
 import org.digimead.digi.lib.mesh.Mesh
@@ -70,7 +70,7 @@ class DiffieHellmanTest_j1 extends FunSuite with BeforeAndAfter with ShouldMatch
     conf =>
       val sourceHexapod = new Hexapod(UUID.randomUUID())
       val destinationHexapod = new Hexapod(UUID.randomUUID())
-      val transportEndpoint = new LoopbackEndpoint(new Endpoint.TransportIdentifier {}, new WeakReference(null), Endpoint.InOut)
+      val transportEndpoint = new LoopbackEndpoint(new Endpoint.TransportIdentifier {}, new WeakReference(null), Endpoint.Direction.InOut)
       val publicKey = 1
       val g = 2
       val p = 3
@@ -98,3 +98,4 @@ class DiffieHellmanTest_j1 extends FunSuite with BeforeAndAfter with ShouldMatch
       assert(reqA === reqAX)
   }
 }
+*/

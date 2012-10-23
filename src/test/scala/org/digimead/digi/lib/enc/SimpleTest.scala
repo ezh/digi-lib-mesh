@@ -18,32 +18,20 @@
 
 package org.digimead.digi.lib.enc
 
-import org.digimead.digi.lib.aop.Loggable
-import org.digimead.digi.lib.log.Logging
-import org.digimead.digi.lib.log.Record
+import org.digimead.digi.lib.DependencyInjection
 import org.digimead.lib.test.TestHelperLogging
-import org.scalatest.BeforeAndAfter
 import org.scalatest.fixture.FunSuite
 import org.scalatest.matchers.ShouldMatchers
 
-class SimpleTest_j1 extends FunSuite with ShouldMatchers with BeforeAndAfter with TestHelperLogging {
+class SimpleTest_j1 extends FunSuite with ShouldMatchers with TestHelperLogging {
   type FixtureParam = Map[String, Any]
-  val log = Logging.commonLogger
 
   override def withFixture(test: OneArgTest) {
+    DependencyInjection.get.foreach(_ => DependencyInjection.clear)
+    DependencyInjection.set(org.digimead.digi.lib.mesh.default ~ defaultConfig(test.configMap))
     withLogging(test.configMap) {
       test(test.configMap)
     }
-  }
-
-  before {
-    Record.init(new Record.DefaultInit)
-    Logging.init(new Logging.DefaultInit)
-    Logging.resume
-  }
-
-  after {
-    Logging.deinit
   }
 
   test("Simple test encript/decript") {
@@ -72,5 +60,4 @@ class SimpleTest_j1 extends FunSuite with ShouldMatchers with BeforeAndAfter wit
       val encN = Simple.encrypt(key, "1234567890ABC")
       assert("1234567890ABC".getBytes() === Simple.decrypt(key, encN))
   }
-
 }

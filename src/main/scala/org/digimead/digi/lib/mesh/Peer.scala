@@ -25,71 +25,114 @@ import scala.collection.mutable.Publisher
 import scala.collection.mutable.Subscriber
 import scala.collection.mutable.SynchronizedBuffer
 
-import org.digimead.digi.lib.log.Logging
+import org.digimead.digi.lib.DependencyInjection
+import org.digimead.digi.lib.DependencyInjection.PersistentInjectable
+import org.digimead.digi.lib.aop.log
+import org.digimead.digi.lib.log.Loggable
+import org.digimead.digi.lib.log.logger.RichLogger.rich2slf4j
 import org.digimead.digi.lib.mesh.endpoint.Endpoint
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
+import org.scala_tools.subcut.inject.BindingModule
+import org.scala_tools.subcut.inject.Injectable
 
-class Peer extends Peer.Interface {
+/**
+ * Class Peer is default implementation for Peer singleton.
+ * It provide global pool of peers. Peer is subset of Mesh with contains only reachable Hexapods.
+ */
+class Peer(implicit val bindingModule: BindingModule) extends Injectable with Peer.Interface {
   protected val pool = new ArrayBuffer[Hexapod] with SynchronizedBuffer[Hexapod]
-  def add(node: Hexapod) = {
-    log.debug("add %s to peer pool".format(node))
-    pool += node
-    publish(Peer.Event.Add(node))
+
+  /**
+   * Add hexapod to peer pool. Register hexapod in Mesh if necessary
+   */
+  @log
+  def add(hexapod: Hexapod): Boolean = {
+    log.debug("add %s to peer pool".format(hexapod))
+    if (pool.contains(hexapod)) {
+      log.error("hexapod %s already registered".format(hexapod))
+      return false
+    }
+    if (Mesh(hexapod.uuid).isEmpty)
+      if (!Mesh.register(hexapod)) {
+        log.error("unable registers %s in mesh".format(hexapod))
+        return false
+      }
+    pool += hexapod
+    publish(Peer.Event.Add(hexapod))
+    true
   }
-  def remove(node: Hexapod) = {
-    log.debug("remove %s to peer pool".format(node))
-    pool -= node
-    publish(Peer.Event.Remove(node))
+  /**
+   * Remove hexapod from peer pool.
+   */
+  @log
+  def remove(hexapod: Hexapod): Boolean = {
+    log.debug("remove %s to peer pool".format(hexapod))
+    if (!pool.contains(hexapod)) {
+      log.error("hexapod %s not registered".format(hexapod))
+      return false
+    }
+    pool -= hexapod
+    publish(Peer.Event.Remove(hexapod))
+    true
   }
-  def get(transport: Option[Class[_ <: Endpoint]], direction: Endpoint.Direction*): Seq[Hexapod] = {
-    val message = "search best peer" + (if (transport.nonEmpty || direction.nonEmpty) " for " else "")
-    val messageTransport = transport.map("transport " + _.getName()).getOrElse("")
-    val messageDirrection = (if (transport.nonEmpty) " and " else "") +
-      (if (direction.nonEmpty) "direction %s".format(direction.mkString(" or ")) else "")
-    log.debug(message + messageTransport + messageDirrection)
-    var result = pool.toSeq
-    transport.foreach(transport => result = result.filter(_.getEndpoints.exists(ep => {
-      transport.isAssignableFrom(ep.getClass()) && (direction.isEmpty || direction.contains(ep.direction))
-    })))
-    result.take(5)
-  }
+  /**
+   *
+   * @log
+   * def get(transport: Option[Class[_ <: Endpoint]], direction: Endpoint.Direction*): Seq[Hexapod] = {
+   * val message = "search best peer" + (if (transport.nonEmpty || direction.nonEmpty) " for " else "")
+   * val messageTransport = transport.map("transport " + _.getName()).getOrElse("")
+   * val messageDirrection = (if (transport.nonEmpty) " and " else "") +
+   * (if (direction.nonEmpty) "direction %s".format(direction.mkString(" or ")) else "")
+   * log.debug(message + messageTransport + messageDirrection)
+   * var result = pool.toSeq
+   * transport.foreach(transport => result = result.filter(_.getEndpoints.exists(ep => {
+   * transport.isAssignableFrom(ep.getClass()) && (direction.isEmpty || direction.contains(ep.direction))
+   * })))
+   * result.take(5)
+   * }
+   *
+   */
+  /**
+   * Clear peer pool
+   */
+  @log
+  def clear() = pool.foreach(remove)
   override def toString = "default peers pool implemetation"
 }
 
-object Peer extends Logging {
+/**
+ * Singleton Peer contains global registry of discovered Hexapods
+ */
+object Peer extends PersistentInjectable with Loggable {
   type Pub = Publisher[Event]
   type Sub = Subscriber[Event, Pub]
   implicit def peer2implementation(p: Peer.type): Interface = p.implementation
-  private var implementation: Interface = null
+  implicit def bindingModule = DependencyInjection()
+  @volatile private var implementation = inject[Interface]
 
-  def init(arg: Init): Unit = synchronized {
-    assert(Mesh.isInitialized, "Mesh not initialized")
-    log.debug("initialize peers pool with " + arg.implementation)
-    implementation = arg.implementation
+  def instance() = implementation
+  def reloadInjection() {
+    implementation = inject[Interface]
   }
-  def isInitialized(): Boolean = implementation != null
 
-  trait Interface extends Peer.Pub with Logging {
+  trait Interface extends Peer.Pub with Loggable {
     protected val pool: Buffer[Hexapod]
 
-    /** add Hexapod to hub pool */
-    def add(node: Hexapod)
-    /** remove Hexapod to hub pool */
-    def remove(node: Hexapod)
+    def apply(): Iterable[Hexapod] = implementation.pool.toIterable
+    /** add Hexapod to peer pool */
+    def add(hexapod: Hexapod): Boolean
+    /** remove Hexapod to peer pool */
+    def remove(hexapod: Hexapod): Boolean
     /** get best hexapod */
-    def get(transport: Option[Class[_ <: Endpoint]], direction: Endpoint.Direction*): Seq[Hexapod]
+    //def get(transport: Option[Class[_ <: Endpoint]], direction: Endpoint.Direction*): Seq[Hexapod]
+    /** clear peer pool */
+    def clear()
     override protected def publish(event: Peer.Event) = try {
       super.publish(event)
     } catch {
       case e =>
         log.error(e.getMessage(), e)
     }
-  }
-  trait Init {
-    val implementation: Interface
-  }
-  class DefaultInit extends Init {
-    val implementation: Interface = new Peer
   }
   sealed trait Event
   object Event {

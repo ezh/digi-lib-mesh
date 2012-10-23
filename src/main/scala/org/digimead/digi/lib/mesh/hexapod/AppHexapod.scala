@@ -19,11 +19,8 @@
 package org.digimead.digi.lib.mesh.hexapod
 
 import java.util.UUID
-
 import scala.collection.mutable.SynchronizedMap
 import scala.collection.mutable.WeakHashMap
-
-import org.digimead.digi.lib.aop.Loggable
 import org.digimead.digi.lib.enc.DiffieHellman
 import org.digimead.digi.lib.mesh.Mesh
 import org.digimead.digi.lib.mesh.Mesh.mesh2implementation
@@ -32,11 +29,11 @@ import org.digimead.digi.lib.mesh.communication.Communication.communication2impl
 import org.digimead.digi.lib.mesh.communication.Message
 import org.digimead.digi.lib.mesh.communication.Stimulus
 import org.digimead.digi.lib.mesh.endpoint.Endpoint
+import org.digimead.digi.lib.aop.log
 
 class AppHexapod(override val uuid: UUID) extends Hexapod.AppHexapod(uuid) {
   protected val endpointSubscribers = new WeakHashMap[Endpoint, Endpoint#Sub] with SynchronizedMap[Endpoint, Endpoint#Sub]
-  override protected lazy val registerEntity = false // prevent Mesh.register(this) while Entity initialization
-  Mesh.register(this)
+
   if (authDiffieHellman.isEmpty) {
     log.debug("Diffie Hellman authentification data not found, generate new")
     val p = DiffieHellman.randomPrime(128)
@@ -61,7 +58,7 @@ class AppHexapod(override val uuid: UUID) extends Hexapod.AppHexapod(uuid) {
     log.debug("send " + message)
     val bestLocalEndpoint = endpoint.filter(ep =>
       ep.connected &&
-        (ep.direction == Endpoint.Out || ep.direction == Endpoint.InOut)).sortBy(_.priority).headOption
+        (ep.direction == Endpoint.Direction.Out || ep.direction == Endpoint.Direction.InOut)).sortBy(_.priority).headOption
     bestLocalEndpoint match {
       case Some(localEndpoint) =>
         localEndpoint.send(message)
@@ -81,13 +78,13 @@ class AppHexapod(override val uuid: UUID) extends Hexapod.AppHexapod(uuid) {
         Communication.react(Stimulus.IncomingMessage(message))
     }
   }
-  @Loggable
+  @log
   def connect(): Boolean = endpoint.filter(_.connect).nonEmpty
-  @Loggable
+  @log
   def reconnect() = endpoint.foreach(_.reconnect)
-  @Loggable
+  @log
   def disconnect() = endpoint.foreach(_.disconnect)
-  @Loggable
+  @log
   def connected() = endpoint.exists(_.connected)
   protected def bestEndpoint(target: Endpoint): Option[Endpoint] = {
     None

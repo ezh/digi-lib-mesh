@@ -24,7 +24,7 @@ import java.util.concurrent.atomic.AtomicReference
 
 import scala.Option.option2Iterable
 
-import org.digimead.digi.lib.log.Logging
+import org.digimead.digi.lib.log.Loggable
 import org.digimead.digi.lib.mesh.Mesh
 import org.digimead.digi.lib.mesh.communication.Communication
 import org.digimead.digi.lib.mesh.communication.Communication.communication2implementation
@@ -53,7 +53,7 @@ case class Ping(override val sourceHexapod: UUID,
   override def toString = "Ping[%08X %s]".format(conversation.hashCode(), labelSuffix)
 }
 
-class PingBuilder extends Message.MessageBuilder with Logging {
+class PingBuilder extends Message.MessageBuilder with Loggable {
   def buildMessage(from: Hexapod, to: Hexapod, conversation: UUID, timestamp: Long, word: String, distance: Byte, content: Array[Byte]): Option[Message] = {
     Some(Ping(from.uuid, Some(to.uuid), conversation, timestamp)(false, distance))
   }
@@ -78,7 +78,7 @@ class PingReceptor extends Receptor {
   }
 }
 
-object Ping extends Logging {
+object Ping extends Loggable {
   val word = "ping"
   private val initializationArgument = new AtomicReference[Option[Init]](None)
 

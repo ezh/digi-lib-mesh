@@ -18,10 +18,10 @@
 
 package org.digimead.digi.lib.mesh.hexapod
 
-import java.util.UUID
+/*import java.util.UUID
 
 import org.digimead.digi.lib.aop.Loggable
-import org.digimead.digi.lib.log.Logging
+import org.digimead.digi.lib.log.Loggable
 import org.digimead.digi.lib.log.Record
 import org.digimead.digi.lib.mesh.Mesh
 import org.digimead.digi.lib.mesh.Mesh.mesh2implementation
@@ -72,3 +72,4 @@ class AppHexapodTest_j1 extends FunSuite with BeforeAndAfter with ShouldMatchers
       assert(dh.secretKey === (1))
   }
 }
+*/

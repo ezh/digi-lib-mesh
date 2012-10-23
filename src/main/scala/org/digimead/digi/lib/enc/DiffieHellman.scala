@@ -20,14 +20,13 @@ package org.digimead.digi.lib.enc
 
 import scala.math.BigInt.int2bigInt
 import scala.util.Random
+import org.digimead.digi.lib.log.Loggable
+import org.digimead.digi.lib.aop.log
 
-import org.digimead.digi.lib.aop.Loggable
-import org.digimead.digi.lib.log.Logging
-
-class DiffieHellman(val g: Int, val p: BigInt, val secretKey: BigInt, val publicKey: BigInt) extends Logging {
+class DiffieHellman(val g: Int, val p: BigInt, val secretKey: BigInt, val publicKey: BigInt) extends Loggable {
   def this(g: Int, p: BigInt, secretKey: BigInt) = this(g, p, secretKey, DiffieHellman.doExpMod(g, secretKey, p))
   def this(g: Int, p: BigInt) = this(g, p, DiffieHellman.randomPrime(128))
-  @Loggable
+  @log
   def getSharedKey(peerPublicKey: BigInt): BigInt = {
     assert(secretKey != 0, "secret key not found")
     DiffieHellman.doExpMod(peerPublicKey, secretKey, p)

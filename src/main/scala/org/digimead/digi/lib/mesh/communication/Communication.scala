@@ -23,17 +23,18 @@ import scala.collection.mutable.Publisher
 import scala.collection.mutable.Subscriber
 import scala.collection.mutable.SynchronizedMap
 
-import org.digimead.digi.lib.aop.Loggable
-import org.digimead.digi.lib.log.Logging
+import org.digimead.digi.lib.aop.log
+import org.digimead.digi.lib.log.Loggable
+import org.digimead.digi.lib.log.logger.RichLogger.rich2slf4j
 import org.digimead.digi.lib.mesh.Mesh
 import org.digimead.digi.lib.mesh.Peer
+import org.digimead.digi.lib.mesh.Peer.peer2implementation
 import org.digimead.digi.lib.mesh.hexapod.AppHexapod
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
 import org.digimead.digi.lib.mesh.hexapod.Hexapod.hexapod2app
 import org.digimead.digi.lib.mesh.message.Acknowledgement
 
 class Communication extends Communication.Interface {
-  assert(Hexapod.isInitialized, "Hexapod not initialized")
   /** acknowledgment messages buffer */
   @volatile protected var acknowledgement = Seq[Acknowledgement]()
   /** global Seq[Receptor] */
@@ -141,7 +142,7 @@ class Communication extends Communication.Interface {
     compactMessages()
     deliverMessages()
   }
-  @Loggable
+  @log
   protected def deliverMessages() = {
     acknowledgement.foreach(acknowledgement => deliverAcknowledgementMessage(acknowledgement))
     buffer.foreach {
@@ -239,7 +240,7 @@ class Communication extends Communication.Interface {
   override def toString = "default communication implemetation"
 }
 
-object Communication extends Logging {
+object Communication extends Loggable {
   type Pub = Publisher[Event]
   type Sub = Subscriber[Event, Pub]
   implicit def communication2implementation(communication: Communication.type): Interface = communication.implementation
@@ -249,9 +250,6 @@ object Communication extends Logging {
   private var holdTTL = 3600000L // 1 hour
 
   def init(arg: Init): Unit = synchronized {
-    assert(Mesh.isInitialized, "Mesh not initialized")
-    assert(Peer.isInitialized, "Peer not initialized")
-    assert(Hexapod.isInitialized, "Hexapod not initialized")
     log.debug("initialize communication with " + arg.implementation)
     implementation = arg.implementation
     deliverMax = arg.deliverMax
@@ -262,7 +260,7 @@ object Communication extends Logging {
   def holdTimeToLive = holdTTL
   def deliverTimeToLive = deliverTTL
 
-  trait Interface extends Communication.Pub with Receptor with Logging {
+  trait Interface extends Communication.Pub with Receptor with Loggable {
     protected var global: Seq[Receptor]
     protected var acknowledgement: Seq[Acknowledgement]
     protected val buffer: HashMap[String, Parcel]

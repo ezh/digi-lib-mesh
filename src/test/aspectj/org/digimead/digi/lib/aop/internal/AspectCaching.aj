@@ -16,16 +16,22 @@
  * limitations under the License.
  */
 
-package org.digimead.digi.lib.mesh
+package org.digimead.digi.lib.aop.internal;
 
-import java.util.UUID
+import org.digimead.digi.lib.aop.cache;
 
-trait Entity {
-  val uuid: UUID
-  assert(Mesh.isInitialized, "Mesh must be initialized")
-  protected lazy val registerEntity = true // allow prevent Mesh.register(this) for super class initialization
-  if (registerEntity) Mesh.register(this)
+privileged public final aspect AspectCaching extends
+		org.digimead.digi.lib.aop.Caching {
+	public pointcut cachedAccessPoint(cache c):
+		execution(@cache * *(..)) && @annotation(c);
 
-  /** dispose entity */
-  def dispose() = Mesh.unregister(this)
+	Object around(final cache c): cachedAccessPoint(c) {
+		Invoker aspectJInvoker = new Invoker() {
+			public Object invoke() {
+				return proceed(c);
+			}
+		};
+		return execute(aspectJInvoker, c, thisJoinPointStaticPart.toLongString(),
+				thisJoinPointStaticPart.toShortString(), thisJoinPoint.getArgs());
+	}
 }

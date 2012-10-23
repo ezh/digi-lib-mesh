@@ -19,10 +19,8 @@
 package org.digimead.digi.lib.mesh.communication
 
 import java.util.UUID
-
 import scala.collection.mutable.SynchronizedQueue
-
-import org.digimead.digi.lib.log.Logging
+import org.digimead.digi.lib.log.Loggable
 import org.digimead.digi.lib.log.Record
 import org.digimead.digi.lib.log.logger.RichLogger.rich2slf4j
 import org.digimead.digi.lib.mesh.Mesh
@@ -36,33 +34,26 @@ import org.digimead.lib.test.TestHelperLogging
 import org.scalatest.BeforeAndAfter
 import org.scalatest.fixture.FunSuite
 import org.scalatest.matchers.ShouldMatchers
+import org.digimead.digi.lib.DependencyInjection
+import org.scala_tools.subcut.inject.NewBindingModule
 
 class CommunicationTest_j1 extends FunSuite with ShouldMatchers with BeforeAndAfter with TestHelperLogging {
   type FixtureParam = Map[String, Any]
-  val log = Logging.commonLogger
 
   override def withFixture(test: OneArgTest) {
+    DependencyInjection.get.foreach(_ => DependencyInjection.clear)
+    DependencyInjection.set(org.digimead.digi.lib.mesh.default ~ defaultConfig(test.configMap))
     withLogging(test.configMap) {
       test(test.configMap)
     }
   }
 
-  before {
-    Record.init(new Record.DefaultInit)
-    Logging.init(new Logging.DefaultInit)
-    Logging.resume
-    Mesh.init(new Mesh.DefaultInit)
-    Peer.init(new Peer.DefaultInit)
-    Hexapod.init(new AppHexapod(UUID.randomUUID()))
-  }
-
-  after {
-    Logging.deinit
-  }
-
   test("communication test") {
     conf =>
       val events = new SynchronizedQueue[Any]
+      val custom =  new NewBindingModule(module => {
+        module.bind[Hexapod.AppHexapod] toSingle { new AppHexapod(UUID.randomUUID()) }
+      })
 
       val comm = new Communication {
         def getBuffer = buffer
@@ -75,7 +66,6 @@ class CommunicationTest_j1 extends FunSuite with ShouldMatchers with BeforeAndAf
       })
       Ping.init(new Ping.DefaultInit)
       DiffieHellman.init(new DiffieHellman.DefaultInit)
-      Mesh.isReady
 
       Communication.subscribe(new Communication.Sub {
         def notify(pub: Communication.Pub, event: Communication.Event) {

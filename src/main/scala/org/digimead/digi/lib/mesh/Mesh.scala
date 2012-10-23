@@ -21,42 +21,65 @@ package org.digimead.digi.lib.mesh
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
 
-import scala.annotation.elidable
 import scala.collection.mutable.HashMap
 import scala.collection.mutable.Publisher
 import scala.collection.mutable.Subscriber
 import scala.collection.mutable.SynchronizedMap
 import scala.ref.WeakReference
 
-import org.digimead.digi.lib.log.Logging
-import org.digimead.digi.lib.mesh.communication.Communication
+import org.digimead.digi.lib.DependencyInjection
+import org.digimead.digi.lib.DependencyInjection.PersistentInjectable
+import org.digimead.digi.lib.aop.log
+import org.digimead.digi.lib.log.Loggable
+import org.digimead.digi.lib.log.logger.RichLogger.rich2slf4j
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
-import org.digimead.digi.lib.mesh.message.DiffieHellman
-import org.digimead.digi.lib.mesh.message.Ping
+import org.scala_tools.subcut.inject.BindingModule
+import org.scala_tools.subcut.inject.Injectable
 
-import annotation.elidable.ASSERTION
+/**
+ * Class Mesh is default implementation for Mesh singleton.
+ * It provide global registry of discovered Hexapods
+ */
+class Mesh(implicit val bindingModule: BindingModule) extends Injectable with Mesh.Interface {
+  protected val gcLimit = injectOptional[Int]("Mesh.GC.Limit") getOrElse 100
+  protected val gcCounter = new AtomicInteger(gcLimit)
+  protected val entity = new HashMap[UUID, WeakReference[Hexapod]]() with SynchronizedMap[UUID, WeakReference[Hexapod]]
 
-class Mesh extends Mesh.Interface {
-  private val gcLimit = 100
-  private val gcCouter = new AtomicInteger(gcLimit)
-  val entity = new HashMap[UUID, WeakReference[Entity]]() with SynchronizedMap[UUID, WeakReference[Entity]]
-
-  def register(entity: Entity) {
-    assert(!this.entity.contains(entity.uuid), "entity %s already registered".format(entity))
-    log.debug("register entity " + entity)
-    this.entity(entity.uuid) = new WeakReference(entity)
-    publish(Mesh.Event.Register(entity))
-    if (gcCouter.decrementAndGet() == 0) {
-      gcCouter.set(gcLimit)
+  /**
+   * Register hexapod in mesh registry
+   */
+  @log
+  def register(hexapod: Hexapod): Boolean = {
+    log.debug("register entity " + hexapod)
+    if (entity.contains(hexapod.uuid)) {
+      log.error("hexapod %s already registered".format(hexapod))
+      return false
+    }
+    entity(hexapod.uuid) = new WeakReference(hexapod)
+    publish(Mesh.Event.Register(hexapod))
+    if (gcCounter.decrementAndGet() == 0) {
+      gcCounter.set(gcLimit)
       compact()
     }
+    true
   }
-  def unregister(entity: Entity) {
-    assert(this.entity.contains(entity.uuid), "entity %s not registered".format(entity))
-    log.debug("unregister entity " + entity)
-    publish(Mesh.Event.Unregister(entity))
-    this.entity.remove(entity.uuid)
+  /**
+   * Unregister hexapod in mesh registry
+   */
+  @log
+  def unregister(hexapod: Hexapod): Boolean = {
+    log.debug("unregister entity " + hexapod)
+    if (!entity.contains(hexapod.uuid)) {
+      log.error("hexapod %s not registered".format(hexapod))
+      return false
+    }
+    publish(Mesh.Event.Unregister(hexapod))
+    entity.remove(hexapod.uuid)
+    true
   }
+  /**
+   * Start garbage collector
+   */
   private def compact() {
     entity.foreach {
       case (uuid, entity) if entity.get == None =>
@@ -68,33 +91,28 @@ class Mesh extends Mesh.Interface {
   override def toString = "default mesh implemetation"
 }
 
-object Mesh extends Logging {
+/**
+ * Singleton Mesh contains global registry of discovered Hexapods
+ */
+object Mesh extends PersistentInjectable with Loggable {
   type Pub = Publisher[Event]
   type Sub = Subscriber[Event, Pub]
   implicit def mesh2implementation(m: Mesh.type): Interface = m.implementation
-  private var implementation: Interface = null
+  implicit def bindingModule = DependencyInjection()
+  @volatile private var implementation = inject[Interface]
 
-  def apply(uuid: UUID): Option[Entity] = implementation.entity.get(uuid).flatMap(_.get)
-  def init(arg: Init): Unit = synchronized {
-    log.debug("initialize mesh with " + arg.implementation)
-    implementation = arg.implementation
-  }
-  def isInitialized(): Boolean = implementation != null
-  def isReady(): Boolean = {
-    assert(Mesh.isInitialized, "Mesh not initialized")
-    assert(Peer.isInitialized, "Peer not initialized")
-    assert(Hexapod.isInitialized, "Hexapod not initialized")
-    assert(Communication.isInitialized, "Communication not initialized")
-    assert(DiffieHellman.isInitialized, "DiffieHellman not initialized")
-    assert(Ping.isInitialized, "Ping not initialized")
-    true
+  def instance() = implementation
+  def reloadInjection() {
+    implementation = inject[Interface]
   }
 
-  trait Interface extends Mesh.Pub with Logging {
-    protected[Mesh] val entity: HashMap[UUID, WeakReference[Entity]]
+  trait Interface extends Mesh.Pub with Loggable {
+    protected val entity: HashMap[UUID, WeakReference[Hexapod]]
 
-    def register(entity: Entity)
-    def unregister(entity: Entity)
+    def apply(): Iterable[Hexapod] = implementation.entity.values.flatMap(_.get)
+    def apply(uuid: UUID): Option[Hexapod] = implementation.entity.get(uuid).flatMap(_.get)
+    def register(entity: Hexapod): Boolean
+    def unregister(entity: Hexapod): Boolean
     override protected def publish(event: Mesh.Event) = try {
       super.publish(event)
     } catch {
@@ -102,15 +120,9 @@ object Mesh extends Logging {
         log.error(e.getMessage(), e)
     }
   }
-  trait Init {
-    val implementation: Interface
-  }
-  class DefaultInit extends Init {
-    val implementation: Interface = new Mesh
-  }
   sealed trait Event
   object Event {
-    case class Register(entity: Entity) extends Event
-    case class Unregister(entity: Entity) extends Event
+    case class Register(hexapod: Hexapod) extends Event
+    case class Unregister(hexapod: Hexapod) extends Event
   }
 }

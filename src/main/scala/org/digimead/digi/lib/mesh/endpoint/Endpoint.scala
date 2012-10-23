@@ -23,9 +23,8 @@ import scala.collection.mutable.SynchronizedMap
 import scala.collection.mutable.WeakHashMap
 import scala.ref.WeakReference
 
-import org.digimead.digi.lib.aop.Loggable
 import org.digimead.digi.lib.enc.Simple
-import org.digimead.digi.lib.log.Logging
+import org.digimead.digi.lib.log.Loggable
 import org.digimead.digi.lib.log.logger.RichLogger.rich2slf4j
 import org.digimead.digi.lib.mesh.Mesh
 import org.digimead.digi.lib.mesh.Peer
@@ -44,12 +43,11 @@ abstract class Endpoint(
   /** direction */
   val direction: Endpoint.Direction)
   extends Publisher[Endpoint.Event] with AbstractEndpoint {
-  this: Logging =>
+  this: Loggable =>
   @volatile var priority = Endpoint.Priority.LOW
   @volatile var connected = false
   @volatile var lastActivity = System.currentTimeMillis
   protected val peerSessionKey = new WeakHashMap[Hexapod, Endpoint.SessionKey] with SynchronizedMap[Hexapod, Endpoint.SessionKey]
-  assert(Peer.isInitialized, "Peer not initialized")
   terminationPoint.get.foreach(_.registerEndpoint(this))
 
   def receive(message: Array[Byte])
@@ -83,6 +81,12 @@ abstract class Endpoint(
     log.error("unable to send: incomlete route [[%s %s]] -> [[%s %s]]".format(terminationPoint.get, this, remoteHexapod, remoteEndpoint))
     None
   }
+  /**
+   * generate string signature from endpoint in format class priority id1 id2 ... idN
+   * field separator is space
+   * only printable characters allowed
+   */
+  def signature(): String = "%s %d %s".format(getClass.getName + priority + identifier.signature)
   protected def send(message: Message, key: Option[Array[Byte]], localHexapod: Hexapod, remoteHexapod: Hexapod, remoteEndpoint: Endpoint): Option[Endpoint]
   /**
    * tests against other endpoint
@@ -93,15 +97,17 @@ abstract class Endpoint(
     message.destinationHexapod match {
       case Some(hexapodUUID) =>
         Mesh(hexapodUUID) match {
-          case Some(hexapod: Hexapod) if hexapod.getEndpoints.exists(ep => suitable(ep, Endpoint.In, Endpoint.InOut)) =>
-            hexapod.getEndpoints.filter(ep => suitable(ep, Endpoint.In, Endpoint.InOut)).headOption
+          case Some(hexapod: Hexapod) if hexapod.getEndpoints.exists(ep => suitable(ep, Endpoint.Direction.In, Endpoint.Direction.InOut)) =>
+            hexapod.getEndpoints.filter(ep => suitable(ep, Endpoint.Direction.In, Endpoint.Direction.InOut)).headOption
           case _ =>
-            Peer.get(Some(this.getClass()), Endpoint.In, Endpoint.InOut).map(_.getEndpoints).flatten.
-              filter(ep => suitable(ep, Endpoint.In, Endpoint.InOut)).headOption
+            /*Peer.get(Some(this.getClass()), Endpoint.Direction.In, Endpoint.Direction.InOut).map(_.getEndpoints).flatten.
+              filter(ep => suitable(ep, Endpoint.Direction.In, Endpoint.Direction.InOut)).headOption*/
+            None
         }
       case None =>
-        Peer.get(Some(this.getClass()), Endpoint.In, Endpoint.InOut).map(_.getEndpoints).flatten.
-          filter(ep => suitable(ep, Endpoint.In, Endpoint.InOut)).headOption
+        /*Peer.get(Some(this.getClass()), Endpoint.Direction.In, Endpoint.Direction.InOut).map(_.getEndpoints).flatten.
+          filter(ep => suitable(ep, Endpoint.Direction.In, Endpoint.Direction.InOut)).headOption*/
+        None
     }
   protected def getKeyForHexapod(peerHexapod: Hexapod): Option[Array[Byte]] = {
     compactRawKeys()
@@ -142,8 +148,13 @@ abstract class Endpoint(
 object Endpoint {
   @volatile private var maxKeyLifeTime = 60000L
   @volatile private var maxKeyAccessTime = 100
+  
+  def getRemoteEndpointFromSignature(heaxapod: Hexapod, signature: String) : Endpoint = {
+    null
+  }
 
   trait TransportIdentifier {
+    def signature(): String
     override def toString = "EmptyTransportIdentifier"
   }
   object Priority extends Enumeration {
@@ -165,11 +176,13 @@ object Endpoint {
   }
   // direction
   sealed trait Direction
-  trait In extends Direction
-  case object In extends In
-  trait Out extends Direction
-  case object Out extends Out
-  case object InOut extends In with Out
+  sealed trait In extends Direction
+  sealed trait Out extends Direction
+  object Direction {
+    case object In extends In
+    case object Out extends Out
+    case object InOut extends In with Out
+  }
   // event
   sealed trait Event
   object Event {

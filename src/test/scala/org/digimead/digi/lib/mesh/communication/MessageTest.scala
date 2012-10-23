@@ -18,9 +18,9 @@
 
 package org.digimead.digi.lib.mesh.communication
 
-import java.util.UUID
+/*import java.util.UUID
 
-import org.digimead.digi.lib.log.Logging
+import org.digimead.digi.lib.log.Loggable
 import org.digimead.digi.lib.log.Record
 import org.digimead.digi.lib.log.logger.RichLogger.rich2slf4j
 import org.digimead.digi.lib.mesh.Mesh
@@ -70,3 +70,4 @@ class MessageTest_j1 extends FunSuite with BeforeAndAfter with TestHelperLogging
       ping3.timestamp should equal(ping4.get.timestamp)
   }
 }
+*/

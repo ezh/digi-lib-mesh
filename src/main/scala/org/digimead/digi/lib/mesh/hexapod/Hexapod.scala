@@ -19,46 +19,47 @@
 package org.digimead.digi.lib.mesh.hexapod
 
 import java.util.UUID
-
 import scala.collection.mutable.Publisher
 import scala.collection.mutable.Subscriber
 import scala.collection.mutable.SynchronizedMap
 import scala.collection.mutable.WeakHashMap
 import scala.math.BigInt.int2bigInt
-
-import org.digimead.digi.lib.aop.Loggable
+import org.digimead.digi.lib.DependencyInjection
+import org.digimead.digi.lib.DependencyInjection.PersistentInjectable
+import org.digimead.digi.lib.aop.log
 import org.digimead.digi.lib.enc.DiffieHellman
 import org.digimead.digi.lib.enc.Simple
-import org.digimead.digi.lib.log.Logging
-import org.digimead.digi.lib.mesh.Entity
-import org.digimead.digi.lib.mesh.Mesh
-import org.digimead.digi.lib.mesh.Peer
+import org.digimead.digi.lib.log.Loggable
+import org.digimead.digi.lib.log.logger.RichLogger.rich2slf4j
 import org.digimead.digi.lib.mesh.communication.Message
 import org.digimead.digi.lib.mesh.endpoint.AbstractEndpoint
 import org.digimead.digi.lib.mesh.endpoint.Endpoint
+import org.digimead.digi.lib.mesh.Mesh
 
-class Hexapod(val uuid: UUID) extends Entity with Hexapod.Pub with Logging {
+class Hexapod(val uuid: UUID) extends Hexapod.Pub with Loggable {
   /** Hexapod endpoints */
   @volatile protected var endpoint = Seq[Endpoint]()
   @volatile protected var authDiffieHellman: Option[DiffieHellman] = None
   protected val peerSessionKey = new WeakHashMap[Hexapod, (BigInt, Array[Byte])] with SynchronizedMap[Hexapod, (BigInt, Array[Byte])]
   log.debug("alive %s %s".format(this, uuid))
 
+  def init() = Mesh.register(this)
+  def dispose() = Mesh.unregister(this)
   def registerEndpoint(endpoint: Endpoint) {
     log.debug("register %s endpoint at %s".format(endpoint, this))
     this.endpoint = this.endpoint :+ endpoint
   }
   def getEndpoints() = endpoint
-  @Loggable
+  @log
   def getDiffieHellman() = authDiffieHellman
-  @Loggable
+  @log
   def setDiffieHellman(g: Int, p: BigInt, publicKey: BigInt, secretKey: BigInt = 0): DiffieHellman = {
     val dh = new DiffieHellman(g, p, secretKey, publicKey)
     authDiffieHellman = Some(dh)
     //publish(Hexapod.Event.SetDiffieHellman(this))
     dh
   }
-  @Loggable
+  @log
   def getKeyForHexapod(peerHexapod: Hexapod): Option[(BigInt, Array[Byte])] = {
     peerSessionKey.get(peerHexapod) match {
       case result: Some[(BigInt, Array[Byte])] => result
@@ -83,27 +84,25 @@ class Hexapod(val uuid: UUID) extends Entity with Hexapod.Pub with Logging {
   override def toString = "Hexapod[%08X]".format(this.hashCode())
 }
 
-object Hexapod extends Logging {
+object Hexapod extends PersistentInjectable with Loggable {
   type Pub = Publisher[Event]
   type Sub = Subscriber[Event, Pub]
   implicit def hexapod2app(h: Hexapod.type): AppHexapod = h.applicationHexapod
-  private var applicationHexapod: AppHexapod = null
+  implicit def bindingModule = DependencyInjection()
+  @volatile private var applicationHexapod = inject[AppHexapod]
 
-  def init(arg: AppHexapod): Unit = synchronized {
-    assert(!isInitialized, "Hexapod is already initialized")
-    assert(Mesh.isInitialized, "Mesh not initialized")
-    assert(Peer.isInitialized, "Peer not initialized")
-    log.debug("initialize application hexapod with " + arg)
-    applicationHexapod = arg
-  }
-  def isInitialized(): Boolean = applicationHexapod != null
   def instance() = applicationHexapod
+  def reloadInjection() {
+    applicationHexapod = inject[AppHexapod]
+  }
+  def recreateFromSignature(): Option[Hexapod] = {
+    None
+  }
 
-  abstract class AppHexapod(override val uuid: UUID) extends Hexapod(uuid) with AbstractEndpoint with Logging {
+  abstract class AppHexapod(override val uuid: UUID) extends Hexapod(uuid) with AbstractEndpoint with Loggable {
     def receive(message: Message)
     def connected(): Boolean
   }
-
   sealed trait Event
   object Event {
     case class Connect(val endpoint: Endpoint) extends Event

@@ -21,13 +21,10 @@ package org.digimead.digi.lib.mesh.endpoint
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
-
 import scala.Option.option2Iterable
 import scala.annotation.tailrec
 import scala.ref.WeakReference
-
-import org.digimead.digi.lib.aop.Loggable
-import org.digimead.digi.lib.log.Logging
+import org.digimead.digi.lib.log.Loggable
 import org.digimead.digi.lib.log.NDC
 import org.digimead.digi.lib.mesh.Mesh
 import org.digimead.digi.lib.mesh.communication.Communication
@@ -36,12 +33,14 @@ import org.digimead.digi.lib.mesh.communication.Message
 import org.digimead.digi.lib.mesh.hexapod.AppHexapod
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
 import org.digimead.digi.lib.mesh.message.Acknowledgement
+import java.net.SocketException
+import org.digimead.digi.lib.aop.log
 
 class UDPEndpoint(
   override val identifier: UDPEndpoint.TransportIdentifier,
   override val terminationPoint: WeakReference[Hexapod],
   override val direction: Endpoint.Direction)
-  extends Endpoint(identifier, terminationPoint, direction) with Logging {
+  extends Endpoint(identifier, terminationPoint, direction) with Loggable {
   log.debug("%s %s".format(this, identifier))
   /** listen interface address, port */
   @volatile protected var receiveSocket: Option[DatagramSocket] = None
@@ -50,7 +49,7 @@ class UDPEndpoint(
   @volatile protected var serverThread: Option[Thread] = None
   protected val buffer = new Array[Byte](4096)
 
-  @Loggable
+  @log
   protected def send(message: Message, key: Option[Array[Byte]], localHexapod: Hexapod, remoteHexapod: Hexapod, remoteEndpoint: Endpoint): Option[Endpoint] = remoteEndpoint match {
     case remoteUDPEndpoint: UDPEndpoint =>
       for {
@@ -67,7 +66,7 @@ class UDPEndpoint(
       log.fatal("unexpected endpoint type: " + error)
       None
   }
-  @Loggable
+  @log
   def receive(message: Array[Byte]) = try {
     Message.parseRawMessage(message, true) match {
       case Some(message: Acknowledgement) =>
@@ -91,15 +90,15 @@ class UDPEndpoint(
     case e =>
       log.error(e.getMessage())
   }
-  @Loggable
+  @log
   def connect(): Boolean = synchronized {
     receiveSocket.map(_.close())
     receiveSocket = identifier match {
-      case UDPEndpoint.TransportIdentifier(Some(bindaddr), Some(port)) =>
+      case UDPEndpoint.TransportIdentifier(Some(bindaddr), Some(port), _) =>
         Some(new DatagramSocket(port, bindaddr))
-      case UDPEndpoint.TransportIdentifier(None, Some(port)) =>
+      case UDPEndpoint.TransportIdentifier(None, Some(port), _) =>
         Some(new DatagramSocket(port))
-      case UDPEndpoint.TransportIdentifier(_, None) =>
+      case UDPEndpoint.TransportIdentifier(_, None, _) =>
         None
     }
     packet = receiveSocket.map(_ => new DatagramPacket(buffer, buffer.length))
@@ -107,22 +106,31 @@ class UDPEndpoint(
       receiveSocket <- receiveSocket
       packet <- packet
     } yield {
-      assert(direction == Endpoint.In || direction == Endpoint.InOut, "illegal server for Endpoint.Out direction")
+      assert(direction == Endpoint.Direction.In || direction == Endpoint.Direction.InOut, "illegal server for Endpoint.Direction.Out direction")
       val thread = new Thread("UDPEndpoint server at %s:%s".format(identifier.addr.getOrElse("0.0.0.0"), identifier.port.get)) {
         log.info("bind %s to %s:%s".format(UDPEndpoint.this, identifier.addr.getOrElse("0.0.0.0"), identifier.port.get))
         this.setDaemon(true)
         @tailrec
         override def run() = {
           if (UDPEndpoint.this.serverThread.nonEmpty) {
-            receiveSocket.receive(packet)
-            log.debug("received packet from %s %db".format(packet.getAddress().getHostAddress(), packet.getLength()))
             try {
-              receive(packet.getData())
+              receiveSocket.receive(packet)
+              log.debug("received packet from %s %db".format(packet.getAddress().getHostAddress(), packet.getLength()))
+              try {
+                receive(packet.getData())
+              } catch {
+                case e =>
+                  log.error(e.getMessage, e)
+              }
             } catch {
+              case e: SocketException if e.getMessage == "Socket closed" =>
+                log.debug("socket closed")
               case e =>
                 log.error(e.getMessage, e)
+                throw e
             }
-            run
+            if (!receiveSocket.isClosed())
+              run
           }
         }
       }
@@ -133,9 +141,9 @@ class UDPEndpoint(
     publish(Endpoint.Event.Connect(this))
     true
   }
-  @Loggable
+  @log
   def reconnect() {}
-  @Loggable
+  @log
   def disconnect() = synchronized {
     serverThread = None
     receiveSocket.map(_.close())
@@ -146,5 +154,9 @@ class UDPEndpoint(
 }
 
 object UDPEndpoint {
-  case class TransportIdentifier(addr: Option[InetAddress] = None, port: Option[Int] = None) extends Endpoint.TransportIdentifier
+  case class TransportIdentifier(addr: Option[InetAddress] = None, port: Option[Int] = None,
+    holderClass: Class[_ <: UDPEndpoint])
+    extends Endpoint.TransportIdentifier {
+    def signature() = "%s %s".format(holderClass.getName, addr.getOrElse("") + ":" + port.getOrElse(""))
+  }
 }

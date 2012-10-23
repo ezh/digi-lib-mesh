@@ -28,8 +28,7 @@ import java.util.concurrent.atomic.AtomicReference
 
 import scala.Option.option2Iterable
 
-import org.digimead.digi.lib.aop.Loggable
-import org.digimead.digi.lib.log.Logging
+import org.digimead.digi.lib.log.Loggable
 import org.digimead.digi.lib.mesh.Mesh
 import org.digimead.digi.lib.mesh.communication.Communication
 import org.digimead.digi.lib.mesh.communication.Communication.communication2implementation
@@ -89,7 +88,7 @@ case class DiffieHellman(val key: BigInt, val g: Int, val p: BigInt,
   override def toString = "DiffieHellman[%08X %s]".format(conversation.hashCode(), labelSuffix)
 }
 
-class DiffieHellmanBuilder extends Message.MessageBuilder with Logging {
+class DiffieHellmanBuilder extends Message.MessageBuilder with Loggable {
   def buildMessage(from: Hexapod, to: Hexapod, conversation: UUID, timestamp: Long, word: String, distance: Byte, content: Array[Byte]): Option[Message] = try {
     val bais = new ByteArrayInputStream(content)
     val r = new DataInputStream(bais)
@@ -136,7 +135,7 @@ class DiffieHellmanReceptor extends Receptor {
   }
 }
 
-object DiffieHellman extends Logging {
+object DiffieHellman extends Loggable {
   val word = "dh"
   private val initializationArgument = new AtomicReference[Option[Init]](None)
 

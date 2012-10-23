@@ -18,33 +18,22 @@
 
 package org.digimead.digi.lib.enc
 
-import org.digimead.digi.lib.aop.Loggable
-import org.digimead.digi.lib.log.Logging
-import org.digimead.digi.lib.log.Record
+import org.digimead.digi.lib.DependencyInjection
 import org.digimead.digi.lib.log.logger.RichLogger.rich2slf4j
 import org.digimead.lib.test.TestHelperLogging
-import org.scalatest.BeforeAndAfter
 import org.scalatest.fixture.FunSuite
 import org.scalatest.matchers.ShouldMatchers.convertToAnyRefShouldWrapper
 import org.scalatest.matchers.ShouldMatchers.equal
 
-class DiffieHellmanTest_j1 extends FunSuite with BeforeAndAfter with TestHelperLogging {
+class DiffieHellmanTest_j1 extends FunSuite with TestHelperLogging {
   type FixtureParam = Map[String, Any]
 
   override def withFixture(test: OneArgTest) {
+    DependencyInjection.get.foreach(_ => DependencyInjection.clear)
+    DependencyInjection.set(org.digimead.digi.lib.mesh.default ~ defaultConfig(test.configMap))
     withLogging(test.configMap) {
       test(test.configMap)
     }
-  }
-
-  before {
-    Record.init(new Record.DefaultInit)
-    Logging.init(new Logging.DefaultInit)
-    Logging.resume
-  }
-
-  after {
-    Logging.deinit
   }
 
   test("DiffieHellman test") {
@@ -65,7 +54,7 @@ class DiffieHellmanTest_j1 extends FunSuite with BeforeAndAfter with TestHelperL
       val alicesk = alice.getSharedKey(b1)
       val bobsk = bob.getSharedKey(a1)
 
-      Logging.commonLogger.debug("Done, alice sk = " + alicesk + ", bob sk = " + bobsk)
+      log.debug("Done, alice sk = " + alicesk + ", bob sk = " + bobsk)
 
       alicesk should equal(bobsk)
   }

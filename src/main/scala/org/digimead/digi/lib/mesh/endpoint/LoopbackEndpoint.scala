@@ -19,9 +19,7 @@
 package org.digimead.digi.lib.mesh.endpoint
 
 import scala.ref.WeakReference
-
-import org.digimead.digi.lib.aop.Loggable
-import org.digimead.digi.lib.log.Logging
+import org.digimead.digi.lib.log.Loggable
 import org.digimead.digi.lib.log.NDC
 import org.digimead.digi.lib.mesh.Mesh
 import org.digimead.digi.lib.mesh.communication.Communication
@@ -29,12 +27,13 @@ import org.digimead.digi.lib.mesh.communication.Communication.communication2impl
 import org.digimead.digi.lib.mesh.communication.Message
 import org.digimead.digi.lib.mesh.hexapod.AppHexapod
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
+import org.digimead.digi.lib.aop.log
 
 class LoopbackEndpoint(
   override val identifier: Endpoint.TransportIdentifier,
   override val terminationPoint: WeakReference[AppHexapod],
   override val direction: Endpoint.Direction)
-  extends Endpoint(identifier, terminationPoint, direction) with Logging {
+  extends Endpoint(identifier, terminationPoint, direction) with Loggable {
   log.debug("%s %s".format(this, identifier))
   @volatile var destination: Option[LoopbackEndpoint] = None
 
@@ -42,7 +41,7 @@ class LoopbackEndpoint(
     log.debug("connect %s to %s".format(this, endpoint))
     destination = Some(endpoint)
   }
-  @Loggable
+  @log
   protected def send(message: Message, key: Option[Array[Byte]], localHexapod: Hexapod, remoteHexapod: Hexapod, remoteEndpoint: Endpoint): Option[Endpoint] = remoteEndpoint match {
     case remoteEndpoint: LoopbackEndpoint =>
       log.debug("send message %s to %s via %s".format(message, remoteHexapod, this))
@@ -61,7 +60,7 @@ class LoopbackEndpoint(
       log.fatal("unexpected endpoint type: " + error)
       None
   }
-  @Loggable
+  @log
   def receive(message: Array[Byte]) = try {
     Message.parseRawMessage(message, true) match {
       case Some(message) =>

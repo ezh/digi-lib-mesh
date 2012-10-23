@@ -28,9 +28,8 @@ import scala.collection.mutable.HashMap
 import scala.collection.mutable.SynchronizedMap
 import scala.math.BigInt.int2bigInt
 
-import org.digimead.digi.lib.aop.Loggable
 import org.digimead.digi.lib.enc.Simple
-import org.digimead.digi.lib.log.Logging
+import org.digimead.digi.lib.log.Loggable
 import org.digimead.digi.lib.mesh.Mesh
 import org.digimead.digi.lib.mesh.communication.Communication.communication2implementation
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
@@ -105,7 +104,7 @@ abstract class Message(
   }
 }
 
-object Message extends Logging {
+object Message extends Loggable {
   @volatile var aaa: BigInt = 0
   private val messageMap = new HashMap[String, MessageBuilder] with SynchronizedMap[String, MessageBuilder]
 
@@ -152,7 +151,7 @@ object Message extends Logging {
       }
     }
     val (toHexapod, conversation, timestamp, word, distance, content) = parseRawMessageBody(decryptedBody)
-    assert(!Hexapod.isInitialized || fromHexapodUUID != Hexapod.uuid, "illegal message \"%s\" from AppHexapod".format(word))
+    assert(fromHexapodUUID != Hexapod.uuid, "illegal message \"%s\" from AppHexapod".format(word))
     if (sendAcknowledgementIfSuccess)
       Communication.push(Acknowledgement(conversation.hashCode(), Some(fromHexapodUUID)))
     if (distance == 127) {
