@@ -16,14 +16,14 @@
  * limitations under the License.
  */
 
-package org.digimead.digi.lib.mesh.endpoint
+package org.digimead.digi.lib.mesh
 
-import org.digimead.digi.lib.mesh.communication.Message
+import org.scala_tools.subcut.inject.NewBindingModule
+import org.digimead.digi.lib.DependencyInjection
 
-trait AbstractEndpoint {
-  /** send message */
-  def send(message: Message): Option[Endpoint]
-  def connect(): Boolean
-  def reconnect()
-  def disconnect()
+package object communication {
+  lazy val default = new NewBindingModule(module => {
+    lazy val communicationSingleton = DependencyInjection.makeSingleton(implicit module => new Communication, true)
+    module.bind[Communication.Interface] toModuleSingle { communicationSingleton(_) }
+  })
 }

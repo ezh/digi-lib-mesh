@@ -23,99 +23,95 @@ import scala.collection.mutable.SynchronizedMap
 import scala.collection.mutable.WeakHashMap
 import scala.ref.WeakReference
 
+import org.digimead.digi.lib.DependencyInjection
+import org.digimead.digi.lib.DependencyInjection.PersistentInjectable
+import org.digimead.digi.lib.aop.log
 import org.digimead.digi.lib.enc.Simple
 import org.digimead.digi.lib.log.Loggable
 import org.digimead.digi.lib.log.logger.RichLogger.rich2slf4j
-import org.digimead.digi.lib.mesh.Mesh
-import org.digimead.digi.lib.mesh.Peer
-import org.digimead.digi.lib.mesh.Peer.peer2implementation
-import org.digimead.digi.lib.mesh.communication.Communication
-import org.digimead.digi.lib.mesh.communication.Communication.communication2implementation
-import org.digimead.digi.lib.mesh.communication.Message
+import org.digimead.digi.lib.mesh.message.Message
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
-import org.digimead.digi.lib.mesh.message.DiffieHellman
 
-abstract class Endpoint(
-  /** transport level endpoint id */
-  val identifier: Endpoint.TransportIdentifier,
+/**
+ * unique source/destination
+ */
+trait Endpoint[T <: Endpoint.Nature] extends Publisher[Endpoint.Event] with Loggable {
   /** hexapod container */
-  val terminationPoint: WeakReference[Hexapod],
-  /** direction */
-  val direction: Endpoint.Direction)
-  extends Publisher[Endpoint.Event] with AbstractEndpoint {
-  this: Loggable =>
+  val parent: WeakReference[Hexapod]
+  /** endpoint direction */
+  val direction: Endpoint.Direction
+  /** endpoint nature (at least protocol and address) */
+  val nature: T
+  /** endpoint options (optional parameters, that passed to signature) */
+  val options: String = ""
+  /** endpoint priority */
   @volatile var priority = Endpoint.Priority.LOW
-  @volatile var connected = false
+  /** last communication timestamp */
   @volatile var lastActivity = System.currentTimeMillis
+  /** is endpoint connected/available */
+  @volatile protected var connectionActive = false
+  /** session keys between this endpoint and destination */
   protected val peerSessionKey = new WeakHashMap[Hexapod, Endpoint.SessionKey] with SynchronizedMap[Hexapod, Endpoint.SessionKey]
-  terminationPoint.get.foreach(_.registerEndpoint(this))
+  parent.get.foreach(_.registerEndpoint(this))
 
-  def receive(message: Array[Byte])
-  def send(message: Message): Option[Endpoint] = {
-    for {
-      localHexapod <- terminationPoint.get
-      remoteEndpoint <- getRemoteEndpoint(message)
-      remoteHexapod <- remoteEndpoint.terminationPoint.get
-    } yield message.messageType match {
-      case Message.Type.Unencripted =>
-        send(message, None, localHexapod, remoteHexapod, remoteEndpoint)
-      case Message.Type.Acknowledgement =>
-        send(message, None, localHexapod, remoteHexapod, remoteEndpoint)
-      case _ =>
-        getKeyForHexapod(remoteHexapod) match {
-          case key: Some[_] =>
-            send(message, key, localHexapod, remoteHexapod, remoteEndpoint)
-          case None =>
-            localHexapod.getDiffieHellman() match {
-              case Some(dh) =>
-                Communication.push(DiffieHellman(dh.publicKey, dh.g, dh.p, localHexapod.uuid, Some(remoteHexapod.uuid))(true), false)
-              case None =>
-                log.error("unable to find DiffieHellman parameter for " + localHexapod)
-            }
-            None
-        }
-    }
-  } getOrElse {
-    val remoteEndpoint = getRemoteEndpoint(message)
-    val remoteHexapod = remoteEndpoint.map(_.terminationPoint.get)
-    log.error("unable to send: incomlete route [[%s %s]] -> [[%s %s]]".format(terminationPoint.get, this, remoteHexapod, remoteEndpoint))
-    None
+  /**
+   * connect endpoint to mesh
+   * set connected to true is successful
+   * @return true if successful
+   */
+  def connect(): Boolean
+  /**
+   * return connection state
+   * @return true if successful
+   */
+  def connected(): Boolean = connectionActive
+  /**
+   * disconnect endpoint from mesh
+   * set connected to false is successful
+   * @return true if successful
+   */
+  def disconnect(): Boolean
+  /**
+   * receive and process message from internal listener
+   * @return true if successful
+   */
+  def receive(message: Array[Byte]): Boolean
+  /**
+   * reconnect endpoint if disconnected
+   * @return true if successful
+   */
+  def reconnect(): Boolean = {
+    disconnect
+    connect
   }
   /**
-   * generate string signature from endpoint in format class priority id1 id2 ... idN
-   * field separator is space
-   * only printable characters allowed
+   * write transport signature in form
+   * protocol,address,options
+   * in form:
+   * protocol'address'priority'options
+   * ' is separator
    */
-  def signature(): String = "%s %d %s".format(getClass.getName + priority + identifier.signature)
-  protected def send(message: Message, key: Option[Array[Byte]], localHexapod: Hexapod, remoteHexapod: Hexapod, remoteEndpoint: Endpoint): Option[Endpoint]
+  def signature(): String = Seq(nature.protocol, nature.address, priority.id, direction, options).mkString("'")
   /**
    * tests against other endpoint
    */
-  protected def suitable(ep: Endpoint, directionFilter: Endpoint.Direction*): Boolean =
+  def suitable(ep: Endpoint[_ <: Endpoint.Nature], directionFilter: Endpoint.Direction*): Boolean =
     this.getClass.isAssignableFrom(ep.getClass()) && (directionFilter.isEmpty || directionFilter.contains(ep.direction))
-  protected def getRemoteEndpoint(message: Message): Option[Endpoint] =
-    message.destinationHexapod match {
-      case Some(hexapodUUID) =>
-        Mesh(hexapodUUID) match {
-          case Some(hexapod: Hexapod) if hexapod.getEndpoints.exists(ep => suitable(ep, Endpoint.Direction.In, Endpoint.Direction.InOut)) =>
-            hexapod.getEndpoints.filter(ep => suitable(ep, Endpoint.Direction.In, Endpoint.Direction.InOut)).headOption
-          case _ =>
-            /*Peer.get(Some(this.getClass()), Endpoint.Direction.In, Endpoint.Direction.InOut).map(_.getEndpoints).flatten.
-              filter(ep => suitable(ep, Endpoint.Direction.In, Endpoint.Direction.InOut)).headOption*/
-            None
-        }
-      case None =>
-        /*Peer.get(Some(this.getClass()), Endpoint.Direction.In, Endpoint.Direction.InOut).map(_.getEndpoints).flatten.
-          filter(ep => suitable(ep, Endpoint.Direction.In, Endpoint.Direction.InOut)).headOption*/
-        None
-    }
+
+  /**
+   * send message
+   */
+  def send(message: Message, remoteEndpoint: Endpoint[T]): Boolean = {
+    false
+  }
+  protected def send(message: Message, key: Option[Array[Byte]], remoteEndpoint: Endpoint[T]): Boolean
   protected def getKeyForHexapod(peerHexapod: Hexapod): Option[Array[Byte]] = {
     compactRawKeys()
     peerSessionKey.get(peerHexapod) match {
       case Some(sessionKey) if !sessionKey.isExpired =>
         Some(sessionKey.get)
       case _ =>
-        terminationPoint.get.flatMap {
+        parent.get.flatMap {
           localHexapod =>
             localHexapod.getKeyForHexapod(peerHexapod) match {
               case Some((sharedKey, internalKey)) =>
@@ -145,18 +141,18 @@ abstract class Endpoint(
   }
 }
 
-object Endpoint {
-  @volatile private var maxKeyLifeTime = 60000L
-  @volatile private var maxKeyAccessTime = 100
-  
-  def getRemoteEndpointFromSignature(heaxapod: Hexapod, signature: String) : Endpoint = {
-    null
-  }
+object Endpoint extends PersistentInjectable {
+  assert(org.digimead.digi.lib.mesh.isReady, "Mesh not ready, please build it first")
+  implicit def bindingModule = DependencyInjection()
+  @volatile private var factory = inject[Seq[Factory]] map (factory => factory.protocol -> factory) toMap
+  @volatile private var maxKeyLifeTime = injectOptional[Long]("Mesh.Endpoint.MaxKeyLifeTime") getOrElse 60000L
+  @volatile private var maxKeyAccessTime = injectOptional[Int]("Mesh.Endpoint.MaxKeyAccessTime") getOrElse 100
 
-  trait TransportIdentifier {
-    def signature(): String
-    override def toString = "EmptyTransportIdentifier"
-  }
+  def fromSignature(hexapod: Hexapod, signature: String): Option[Endpoint[_ <: Endpoint.Nature]] =
+    signature.split("""'""").headOption.flatMap(protocol => factory.get(protocol).flatMap(_.fromSignature(hexapod, signature)))
+  def commitInjection() {}
+  def updateInjection() { factory = inject[Seq[Factory]] map (factory => factory.protocol -> factory) toMap }
+
   object Priority extends Enumeration {
     val LOW = Value(10, "LOW")
     val MEDUIM = Value(20, "MEDIUM")
@@ -174,19 +170,52 @@ object Endpoint {
       System.currentTimeMillis() - lastAccess > maxKeyLifeTime ||
         accessCounter > maxKeyAccessTime
   }
+  trait Factory {
+    /** protocol name */
+    val protocol: String
+    /** endpoint factory */
+    def fromSignature(hexapod: Hexapod, signature: String): Option[Endpoint[_ <: Endpoint.Nature]]
+  }
+  /**
+   * marker trait that contain toString method with endpoint address
+   */
+  trait Nature {
+    /** protocol name */
+    val protocol: String
+    /** return address of endpoint as string */
+    def address(): String = throw new UnsupportedOperationException
+    override def toString(): String = protocol + "://" + address()
+  }
   // direction
-  sealed trait Direction
+  sealed trait Direction {
+    def reverse(): Direction
+  }
   sealed trait In extends Direction
   sealed trait Out extends Direction
   object Direction {
-    case object In extends In
-    case object Out extends Out
-    case object InOut extends In with Out
+    def unapply(in: String): Option[Direction] = in match {
+      case "In" => Some(In)
+      case "Out" => Some(Out)
+      case "InOut" => Some(InOut)
+      case _ => None
+    }
+    case object In extends In {
+      def reverse() = Out
+      override def toString() = "In"
+    }
+    case object Out extends Out {
+      def reverse() = In
+      override def toString() = "Out"
+    }
+    case object InOut extends In with Out {
+      override def reverse() = InOut
+      override def toString() = "InOut"
+    }
   }
   // event
   sealed trait Event
   object Event {
-    case class Connect(endpoint: Endpoint) extends Event
-    case class Disconnect(endpoint: Endpoint) extends Event
+    case class Connect(endpoint: Endpoint[_ <: Endpoint.Nature]) extends Event
+    case class Disconnect(endpoint: Endpoint[_ <: Endpoint.Nature]) extends Event
   }
 }

@@ -24,11 +24,12 @@ import org.digimead.digi.lib.mesh.hexapod.AppHexapod
 import java.util.UUID
 
 package object mesh {
-  val default = new NewBindingModule(module => {
+  @volatile var isReady = false
+  lazy val default = new NewBindingModule(module => {
     lazy val meshSingleton = DependencyInjection.makeSingleton(implicit module => new Mesh, true)
     module.bind[Mesh.Interface] toModuleSingle { meshSingleton(_) }
     lazy val peerSingleton = DependencyInjection.makeSingleton(implicit module => new Peer, true)
     module.bind[Peer.Interface] toModuleSingle { peerSingleton(_) }
     module.bind[Hexapod.AppHexapod] toSingle { new AppHexapod(UUID.fromString("00000000-0000-0000-0000-000000000000")) }
-  })
+  }) ~ endpoint.default ~ communication.default ~ message.default
 }

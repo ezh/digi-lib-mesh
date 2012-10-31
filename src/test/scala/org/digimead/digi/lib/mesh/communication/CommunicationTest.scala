@@ -36,36 +36,33 @@ import org.scalatest.fixture.FunSuite
 import org.scalatest.matchers.ShouldMatchers
 import org.digimead.digi.lib.DependencyInjection
 import org.scala_tools.subcut.inject.NewBindingModule
+import org.scala_tools.subcut.inject.BindingModule
 
-class CommunicationTest_j1 extends FunSuite with ShouldMatchers with BeforeAndAfter with TestHelperLogging {
+class CommunicationTest_j1 extends FunSuite with ShouldMatchers with TestHelperLogging {
   type FixtureParam = Map[String, Any]
 
   override def withFixture(test: OneArgTest) {
     DependencyInjection.get.foreach(_ => DependencyInjection.clear)
-    DependencyInjection.set(org.digimead.digi.lib.mesh.default ~ defaultConfig(test.configMap))
+    DependencyInjection.set(org.digimead.digi.lib.mesh.default ~ defaultConfig(test.configMap), { Mesh })
     withLogging(test.configMap) {
       test(test.configMap)
     }
   }
 
+  def resetConfig(newConfig: NewBindingModule = new NewBindingModule(module => {})) = DependencyInjection.reset(newConfig ~ DependencyInjection())
+
   test("communication test") {
     conf =>
-      val events = new SynchronizedQueue[Any]
-      val custom =  new NewBindingModule(module => {
+      val custom = new NewBindingModule(module => {
         module.bind[Hexapod.AppHexapod] toSingle { new AppHexapod(UUID.randomUUID()) }
+        lazy val communicationSingleton = DependencyInjection.makeSingleton(implicit module => new MyCommunication, true)
+        module.bind[Communication.Interface] toModuleSingle { communicationSingleton(_) }
+        module.bind[Long] identifiedBy ("Mesh.Communication.DeliverTTL") toSingle { 1000L }
       })
+      resetConfig(custom)
 
-      val comm = new Communication {
-        def getBuffer = buffer
-        def getDeliverMessageCounter = deliverMessageCounter
-        def getGlobal = global
-      }
-      Communication.init(new Communication.DefaultInit {
-        override val implementation: Communication.Interface = comm
-        override val deliverTTL = 1000L
-      })
-      Ping.init(new Ping.DefaultInit)
-      DiffieHellman.init(new DiffieHellman.DefaultInit)
+      val events = new SynchronizedQueue[Any]
+      val comm = Communication.inner.asInstanceOf[MyCommunication]
 
       Communication.subscribe(new Communication.Sub {
         def notify(pub: Communication.Pub, event: Communication.Event) {
@@ -117,5 +114,11 @@ class CommunicationTest_j1 extends FunSuite with ShouldMatchers with BeforeAndAf
         case Communication.Event.Fail(msg: Ping) => true
         case e => log.error("unextected event " + e); false
       }) should be(true)
+  }
+
+  class MyCommunication(implicit override val bindingModule: BindingModule) extends Communication {
+    def getBuffer = buffer
+    def getDeliverMessageCounter = deliverMessageCounter
+    def getGlobal = global
   }
 }

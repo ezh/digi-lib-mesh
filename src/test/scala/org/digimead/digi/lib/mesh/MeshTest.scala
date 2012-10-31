@@ -18,81 +18,56 @@
 
 package org.digimead.digi.lib.mesh
 
-/*import java.net.InetAddress
+import java.net.InetAddress
 import java.util.UUID
-
 import scala.collection.mutable.SynchronizedQueue
 import scala.ref.WeakReference
-
-import org.digimead.digi.lib.EventPublisher
-import org.digimead.digi.lib.aop.Loggable
-import org.digimead.digi.lib.log.Loggable
-import org.digimead.digi.lib.log.Record
-import org.digimead.digi.lib.mesh.Peer.peer2implementation
+import org.digimead.digi.lib.DependencyInjection
 import org.digimead.digi.lib.mesh.communication.Communication
 import org.digimead.digi.lib.mesh.communication.Communication.communication2implementation
 import org.digimead.digi.lib.mesh.endpoint.Endpoint
 import org.digimead.digi.lib.mesh.endpoint.UDPEndpoint
-import org.digimead.digi.lib.mesh.endpoint.UDPRemoteEndpoint
 import org.digimead.digi.lib.mesh.hexapod.AppHexapod
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
 import org.digimead.digi.lib.mesh.hexapod.Hexapod.hexapod2app
-import org.digimead.digi.lib.mesh.message.DiffieHellman
 import org.digimead.digi.lib.mesh.message.Ping
+import org.digimead.lib.test.EventPublisher
 import org.digimead.lib.test.TestHelperLogging
 import org.digimead.lib.test.TestHelperMatchers
+import org.scala_tools.subcut.inject.BindingModule
+import org.scala_tools.subcut.inject.NewBindingModule
 import org.scalatest.BeforeAndAfter
 import org.scalatest.fixture.FunSuite
 import org.scalatest.matchers.ShouldMatchers
+import org.digimead.digi.lib.mesh.message.DiffieHellman
+import org.digimead.digi.lib.mesh.endpoint.UDPRemoteEndpoint
 
 class MeshTest_j1 extends FunSuite with ShouldMatchers with BeforeAndAfter with TestHelperLogging with TestHelperMatchers {
   type FixtureParam = Map[String, Any]
-  val log = Logging.commonLogger
 
   override def withFixture(test: OneArgTest) {
+    DependencyInjection.get.foreach(_ => DependencyInjection.clear)
     withLogging(test.configMap) {
       test(test.configMap)
     }
   }
 
-  before {
-    Record.init(new Record.InitWithDiagnosticContext)
-    Logging.init(new Logging.DefaultInit)
-    Logging.resume
-  }
-
-  after {
-    Logging.deinit
-  }
-
   test("node 1 ping") {
-    config =>
+    configMap =>
       val events = new SynchronizedQueue[Any]
 
       // init
-      Mesh.init(new Mesh.DefaultInit)
-      Peer.init(new Peer.DefaultInit)
-      val local = new AppHexapod(Common.node1UUID)
-      val localEndpointIn = new UDPEndpoint(UDPEndpoint.TransportIdentifier(Some(InetAddress.getLocalHost()), Some(23456)), new WeakReference(local), Endpoint.Direction.In)
-      val localEndpointOut = new UDPEndpoint(UDPEndpoint.TransportIdentifier(), new WeakReference(local), Endpoint.Out)
-      Hexapod.init(local)
-      val comm = new Communication with EventPublisher[Communication.Event] {
-        def getBuffer = buffer
-        def getDeliverMessageCounter = deliverMessageCounter
-        def getGlobal = global
-        override protected def publish(event: Communication.Event) = lastEvent.synchronized {
-          lastEvent.set(event)
-          lastEvent.notifyAll()
-          super.publish(event)
-        }
-      }
-      Communication.init(new Communication.DefaultInit {
-        override val implementation: Communication.Interface = comm
-        override val deliverTTL = 1000L
-      })
-      Ping.init(new Ping.DefaultInit)
-      DiffieHellman.init(new DiffieHellman.DefaultInit)
-      Mesh.isReady should be(true)
+      val config = new NewBindingModule(module => {
+        module.bind[Hexapod.AppHexapod] toSingle { new AppHexapod(Common.node1UUID) }
+        lazy val communicationSingleton = DependencyInjection.makeSingleton(implicit module => new MyCommunication, true)
+        module.bind[Communication.Interface] toModuleSingle { communicationSingleton(_) }
+        module.bind[Long] identifiedBy ("Mesh.Communication.DeliverTTL") toSingle { 1000L }
+      }) ~ org.digimead.digi.lib.mesh.default ~ defaultConfig(configMap)
+      DependencyInjection.set(config, { Mesh })
+      val localEndpointIn = new UDPEndpoint(new WeakReference(Hexapod.inner), Endpoint.Direction.In,
+        new UDPEndpoint.Nature(Some(InetAddress.getLocalHost()), Some(23456)))
+      val localEndpointOut = new UDPEndpoint(new WeakReference(Hexapod.inner), Endpoint.Direction.Out,
+        new UDPEndpoint.Nature())
 
       // subscribe
       Hexapod.subscribe(new Hexapod.Sub {
@@ -108,11 +83,14 @@ class MeshTest_j1 extends FunSuite with ShouldMatchers with BeforeAndAfter with 
         }
       })
 
+      val comm = Communication.inner.asInstanceOf[MyCommunication]
+
       comm.getBuffer should have size (0)
       comm.getDeliverMessageCounter should have size (0)
       comm.getGlobal should have size (2)
 
-      Communication.push(Ping(local.uuid, None)(true))
+      // ping Hexapod -> None(someone at mesh)
+      Communication.push(Ping(Hexapod.uuid, None)(true))
 
       expectDefined(events.dequeue) { case Communication.Event.Add(msg: Ping) => }
 
@@ -127,7 +105,7 @@ class MeshTest_j1 extends FunSuite with ShouldMatchers with BeforeAndAfter with 
 
       events should have size (0)
 
-      local.connect()
+      Hexapod.connect()
       localEndpointIn.connected should equal(true)
       localEndpointOut.connected should equal(true)
       log.___glance("ENDPOINT CONNECTED")
@@ -139,8 +117,9 @@ class MeshTest_j1 extends FunSuite with ShouldMatchers with BeforeAndAfter with 
       events should have size (0)
 
       log.___glance("ADD REMOTE PEER")
-      val remote = new Hexapod(Common.node2UUID)
-      val remoteEndpointIn = new UDPRemoteEndpoint(UDPEndpoint.TransportIdentifier(Some(InetAddress.getLocalHost()), Some(23457)), new WeakReference(remote), Endpoint.Direction.In)
+      val remote = Hexapod(Common.node2UUID)
+      val remoteEndpointIn = new UDPRemoteEndpoint(new WeakReference(remote), Endpoint.Direction.In,
+          new UDPEndpoint.Nature(Some(InetAddress.getLocalHost()), Some(23457)))
       Peer.add(remote)
 
       expectDefined(events.dequeue) { case Communication.Event.Add(msg: DiffieHellman) => }
@@ -194,7 +173,7 @@ class MeshTest_j1 extends FunSuite with ShouldMatchers with BeforeAndAfter with 
       /*
        * SUCCESSFULL TEST
        */
-      Communication.push(Ping(local.uuid, None)(true))
+      Communication.push(Ping(Hexapod.uuid, None)(true))
       Communication.processMessages
 
       expectDefined(events.dequeue) { case Communication.Event.Add(msg: Ping) => }
@@ -233,11 +212,20 @@ class MeshTest_j1 extends FunSuite with ShouldMatchers with BeforeAndAfter with 
 
       Thread.sleep(1000)
   }
+  class MyCommunication(implicit override val bindingModule: BindingModule) extends Communication with EventPublisher[Communication.Event] {
+    def getBuffer = buffer
+    def getDeliverMessageCounter = deliverMessageCounter
+    def getGlobal = global
+    override protected def publish(event: Communication.Event) = lastEvent.synchronized {
+      lastEvent.set(event)
+      lastEvent.notifyAll()
+      super.publish(event)
+    }
+  }
 }
 
 class MeshTest_j2 extends FunSuite with ShouldMatchers with BeforeAndAfter with TestHelperLogging with TestHelperMatchers {
   type FixtureParam = Map[String, Any]
-  val log = Logging.commonLogger
 
   override def withFixture(test: OneArgTest) {
     withLogging(test.configMap) {
@@ -245,21 +233,11 @@ class MeshTest_j2 extends FunSuite with ShouldMatchers with BeforeAndAfter with 
     }
   }
 
-  before {
-    Record.init(new Record.InitWithDiagnosticContext)
-    Logging.init(new Logging.DefaultInit)
-    Logging.resume
-  }
-
-  after {
-    Logging.deinit
-  }
-
   test("node 2 pong") {
     config =>
       val events = new SynchronizedQueue[Any]
 
-      // init
+    /*      // init
       Mesh.init(new Mesh.DefaultInit)
       Peer.init(new Peer.DefaultInit)
       val local = new AppHexapod(Common.node2UUID)
@@ -342,7 +320,7 @@ class MeshTest_j2 extends FunSuite with ShouldMatchers with BeforeAndAfter with 
       // receive acknowledgement
       expectDefined(comm.nextEvent(5000)) { case Some(Communication.Event.Success(message: Ping)) => }
 
-      Thread.sleep(1000)
+      Thread.sleep(1000)*/
   }
 }
 
@@ -350,4 +328,3 @@ object Common {
   val node1UUID = UUID.fromString("00000000-0000-0000-0000-000000000001")
   val node2UUID = UUID.fromString("00000000-0000-0000-0000-000000000002")
 }
-*/

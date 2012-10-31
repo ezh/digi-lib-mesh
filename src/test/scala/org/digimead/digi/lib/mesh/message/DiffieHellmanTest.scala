@@ -18,59 +18,37 @@
 
 package org.digimead.digi.lib.mesh.message
 
-/*import java.util.UUID
+import java.util.UUID
 
 import scala.math.BigInt.int2bigInt
 import scala.ref.WeakReference
 
-import org.digimead.digi.lib.log.Loggable
-import org.digimead.digi.lib.log.Record
+import org.digimead.digi.lib.DependencyInjection
 import org.digimead.digi.lib.log.logger.RichLogger.rich2slf4j
 import org.digimead.digi.lib.mesh.Mesh
-import org.digimead.digi.lib.mesh.Peer
-import org.digimead.digi.lib.mesh.communication.Communication
-import org.digimead.digi.lib.mesh.communication.Message
 import org.digimead.digi.lib.mesh.endpoint.Endpoint
-import org.digimead.digi.lib.mesh.endpoint.LoopbackEndpoint
-import org.digimead.digi.lib.mesh.hexapod.AppHexapod
+import org.digimead.digi.lib.mesh.endpoint.LocalEndpoint
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
 import org.digimead.lib.test.TestHelperLogging
-import org.scalatest.BeforeAndAfter
 import org.scalatest.fixture.FunSuite
 import org.scalatest.matchers.ShouldMatchers
 
-class DiffieHellmanTest_j1 extends FunSuite with BeforeAndAfter with ShouldMatchers with TestHelperLogging {
+class DiffieHellmanTest_j1 extends FunSuite with ShouldMatchers with TestHelperLogging {
   type FixtureParam = Map[String, Any]
-  val log = Logging.commonLogger
 
   override def withFixture(test: OneArgTest) {
+    DependencyInjection.get.foreach(_ => DependencyInjection.clear)
+    DependencyInjection.set(org.digimead.digi.lib.mesh.default ~ defaultConfig(test.configMap), { Mesh })
     withLogging(test.configMap) {
       test(test.configMap)
     }
   }
 
-  before {
-    Record.init(new Record.DefaultInit)
-    Logging.init(new Logging.DefaultInit)
-    Logging.resume
-    Mesh.init(new Mesh.DefaultInit)
-    Peer.init(new Peer.DefaultInit)
-    Hexapod.init(new AppHexapod(UUID.randomUUID()))
-    Communication.init(new Communication.DefaultInit)
-    Ping.init(new Ping.DefaultInit)
-    DiffieHellman.init(new DiffieHellman.DefaultInit)
-    Mesh.isReady
-  }
-
-  after {
-    Logging.deinit
-  }
-
   test("DiffieHellman (de)serialization test") {
     conf =>
-      val sourceHexapod = new Hexapod(UUID.randomUUID())
-      val destinationHexapod = new Hexapod(UUID.randomUUID())
-      val transportEndpoint = new LoopbackEndpoint(new Endpoint.TransportIdentifier {}, new WeakReference(null), Endpoint.Direction.InOut)
+      val sourceHexapod = Hexapod(UUID.randomUUID())
+      val destinationHexapod = Hexapod(UUID.randomUUID())
+      val transportEndpoint = new LocalEndpoint(new WeakReference(null), Endpoint.Direction.InOut, new LocalEndpoint.Nature(UUID.randomUUID))
       val publicKey = 1
       val g = 2
       val p = 3
@@ -98,4 +76,3 @@ class DiffieHellmanTest_j1 extends FunSuite with BeforeAndAfter with ShouldMatch
       assert(reqA === reqAX)
   }
 }
-*/

@@ -24,16 +24,19 @@ import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.util.Date
 import java.util.UUID
-import java.util.concurrent.atomic.AtomicReference
 
 import scala.Option.option2Iterable
+import scala.math.BigInt.int2bigInt
 
+import org.digimead.digi.lib.DependencyInjection
+import org.digimead.digi.lib.DependencyInjection.PersistentInjectable
+import org.digimead.digi.lib.aop.log
 import org.digimead.digi.lib.log.Loggable
+import org.digimead.digi.lib.log.logger.RichLogger.rich2slf4j
 import org.digimead.digi.lib.mesh.Mesh
+import org.digimead.digi.lib.mesh.Mesh.mesh2implementation
 import org.digimead.digi.lib.mesh.communication.Communication
 import org.digimead.digi.lib.mesh.communication.Communication.communication2implementation
-import org.digimead.digi.lib.mesh.communication.Message
-import org.digimead.digi.lib.mesh.communication.Receptor
 import org.digimead.digi.lib.mesh.communication.Stimulus
 import org.digimead.digi.lib.mesh.hexapod.AppHexapod
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
@@ -46,7 +49,7 @@ case class DiffieHellman(val key: BigInt, val g: Int, val p: BigInt,
   override val conversation: UUID = UUID.randomUUID(),
   override val timestamp: Long = System.currentTimeMillis())(val isReplyRequired: Boolean, override val distance: Byte = 0)
   extends Message(DiffieHellman.word, sourceHexapod, destinationHexapod, conversation, timestamp) {
-  val messageType = Message.Type.Unencripted
+  val messageType = Message.Type.Unencrypted
   DiffieHellman.log.debug("alive %s %s %s".format(this, conversation, Util.dateString(new Date(timestamp))))
 
   def content(): Array[Byte] = {
@@ -88,8 +91,9 @@ case class DiffieHellman(val key: BigInt, val g: Int, val p: BigInt,
   override def toString = "DiffieHellman[%08X %s]".format(conversation.hashCode(), labelSuffix)
 }
 
-class DiffieHellmanBuilder extends Message.MessageBuilder with Loggable {
-  def buildMessage(from: Hexapod, to: Hexapod, conversation: UUID, timestamp: Long, word: String, distance: Byte, content: Array[Byte]): Option[Message] = try {
+class DiffieHellmanFactory extends DiffieHellman.Interface {
+  def build(from: Hexapod, to: Hexapod, conversation: UUID, timestamp: Long, word: String,
+    distance: Byte, content: Array[Byte]): Option[Message] = try {
     val bais = new ByteArrayInputStream(content)
     val r = new DataInputStream(bais)
     val publicKeyLength = r.readInt()
@@ -110,9 +114,6 @@ class DiffieHellmanBuilder extends Message.MessageBuilder with Loggable {
       log.warn(e.getMessage())
       None
   }
-}
-
-class DiffieHellmanReceptor extends Receptor {
   def react(stimulus: Stimulus) = stimulus match {
     case Stimulus.IncomingMessage(message @ DiffieHellman(publicKey, g, p, _, _, conversation, _)) if g != 0 =>
       Mesh(message.sourceHexapod) match {
@@ -135,26 +136,20 @@ class DiffieHellmanReceptor extends Receptor {
   }
 }
 
-object DiffieHellman extends Loggable {
+object DiffieHellman extends PersistentInjectable with Message.Factory with Loggable {
   val word = "dh"
-  private val initializationArgument = new AtomicReference[Option[Init]](None)
+  implicit def bindingModule = DependencyInjection()
+  @volatile private var implementation = injectIfBound[Interface] { new DiffieHellmanFactory }
 
-  def init(arg: Init): Unit = synchronized {
-    assert(!isInitialized, "DiffieHellman already initialized")
-    assert(Communication.isInitialized, "Communication not initialized")
-    log.debug("initialize DiffieHellman")
-    initializationArgument.set(Some(arg))
-    Message.add(word, arg.builder)
-    Communication.registerGlobal(arg.receptor)
-  }
-  def isInitialized(): Boolean = initializationArgument.get.nonEmpty
+  def build(from: Hexapod, to: Hexapod, conversation: UUID, timestamp: Long, word: String, distance: Byte,
+    content: Array[Byte]) = implementation.build(from, to, conversation, timestamp, word, distance, content)
+  def react(stimulus: Stimulus) = implementation.react(stimulus)
+  def commitInjection() {}
+  def updateInjection() { implementation = injectIfBound[Interface] { DiffieHellman.implementation } }
 
-  trait Init {
-    val builder: Message.MessageBuilder
-    val receptor: Receptor
-  }
-  class DefaultInit extends Init {
-    val builder: Message.MessageBuilder = new DiffieHellmanBuilder
-    val receptor: Receptor = new DiffieHellmanReceptor
+  trait Interface extends Loggable {
+    def build(from: Hexapod, to: Hexapod, conversation: UUID, timestamp: Long, word: String,
+      distance: Byte, content: Array[Byte]): Option[Message]
+    def react(stimulus: Stimulus): Option[Boolean]
   }
 }

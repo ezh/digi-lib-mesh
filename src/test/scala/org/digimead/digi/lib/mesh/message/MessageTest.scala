@@ -16,58 +16,43 @@
  * limitations under the License.
  */
 
-package org.digimead.digi.lib.mesh.communication
+package org.digimead.digi.lib.mesh.message
 
-/*import java.util.UUID
+import java.util.UUID
 
-import org.digimead.digi.lib.log.Loggable
-import org.digimead.digi.lib.log.Record
+import org.digimead.digi.lib.DependencyInjection
 import org.digimead.digi.lib.log.logger.RichLogger.rich2slf4j
 import org.digimead.digi.lib.mesh.Mesh
-import org.digimead.digi.lib.mesh.message.Ping
 import org.digimead.digi.lib.util.Serialization
 import org.digimead.lib.test.TestHelperLogging
-import org.scalatest.BeforeAndAfter
 import org.scalatest.fixture.FunSuite
-import org.scalatest.matchers.ShouldMatchers.convertToAnyRefShouldWrapper
-import org.scalatest.matchers.ShouldMatchers.convertToLongShouldWrapper
-import org.scalatest.matchers.ShouldMatchers.equal
+import org.scalatest.matchers.ShouldMatchers
 
-class MessageTest_j1 extends FunSuite with BeforeAndAfter with TestHelperLogging {
+class MessageTest_j1 extends FunSuite with ShouldMatchers with TestHelperLogging {
   type FixtureParam = Map[String, Any]
 
   override def withFixture(test: OneArgTest) {
+    DependencyInjection.get.foreach(_ => DependencyInjection.clear)
+    DependencyInjection.set(org.digimead.digi.lib.mesh.default ~ defaultConfig(test.configMap), { Mesh })
     withLogging(test.configMap) {
       test(test.configMap)
     }
   }
 
-  before {
-    Record.init(new Record.DefaultInit)
-    Logging.init(new Logging.DefaultInit)
-    Logging.resume
-    Mesh.init(new Mesh.DefaultInit)
-  }
-
-  after {
-    Logging.deinit
-  }
-
   test("message serialization test") {
     conf =>
       val ping = Ping(UUID.randomUUID(), None)(true)
-      Logging.commonLogger.debug("ping " + ping + " ts: " + ping.timestamp)
+      log.debug("ping " + ping + " ts: " + ping.timestamp)
       val pingAsByteArray = Serialization.serializeToArray(ping)
       val ping2 = Serialization.deserializeFromArray[Ping](pingAsByteArray)
       Some(ping) should equal(ping2)
       ping.timestamp should equal(ping2.get.timestamp)
 
       val ping3 = Ping(UUID.randomUUID(), Some(UUID.randomUUID()))(true)
-      Logging.commonLogger.debug("ping " + ping3 + " ts: " + ping3.timestamp)
+      log.debug("ping " + ping3 + " ts: " + ping3.timestamp)
       val ping3AsByteArray = Serialization.serializeToArray(ping3)
       val ping4 = Serialization.deserializeFromArray[Ping](ping3AsByteArray)
       Some(ping3) should equal(ping4)
       ping3.timestamp should equal(ping4.get.timestamp)
   }
 }
-*/

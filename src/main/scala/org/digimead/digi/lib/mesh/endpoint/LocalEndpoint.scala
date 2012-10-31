@@ -18,47 +18,46 @@
 
 package org.digimead.digi.lib.mesh.endpoint
 
+import java.util.UUID
+
+import scala.collection.mutable.HashMap
+import scala.collection.mutable.SynchronizedMap
 import scala.ref.WeakReference
+
+import org.digimead.digi.lib.aop.log
 import org.digimead.digi.lib.log.Loggable
 import org.digimead.digi.lib.log.NDC
+import org.digimead.digi.lib.log.logger.RichLogger.rich2slf4j
 import org.digimead.digi.lib.mesh.Mesh
-import org.digimead.digi.lib.mesh.communication.Communication
-import org.digimead.digi.lib.mesh.communication.Communication.communication2implementation
-import org.digimead.digi.lib.mesh.communication.Message
+import org.digimead.digi.lib.mesh.Mesh.mesh2implementation
+import org.digimead.digi.lib.mesh.message.Message
 import org.digimead.digi.lib.mesh.hexapod.AppHexapod
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
-import org.digimead.digi.lib.aop.log
 
-class LoopbackEndpoint(
-  override val identifier: Endpoint.TransportIdentifier,
-  override val terminationPoint: WeakReference[AppHexapod],
-  override val direction: Endpoint.Direction)
-  extends Endpoint(identifier, terminationPoint, direction) with Loggable {
-  log.debug("%s %s".format(this, identifier))
-  @volatile var destination: Option[LoopbackEndpoint] = None
+class LocalEndpoint(
+  val parent: WeakReference[Hexapod],
+  val direction: Endpoint.Direction,
+  val nature: LocalEndpoint.Nature = new LocalEndpoint.Nature(UUID.randomUUID))
+  extends Endpoint[LocalEndpoint.Nature] {
+  @volatile var destination: Option[LocalEndpoint] = None
+  priority = Endpoint.Priority.HIGH
+  log.debug("%s %s".format(this, nature.address))
 
-  def loopbackConnect(endpoint: LoopbackEndpoint) = {
+  def connect(): Boolean = {
+    log.debug("initiate fake connection sequence for " + this)
+    connectionActive = true
+    publish(Endpoint.Event.Connect(this))
+    true
+  }
+  def disconnect(): Boolean = {
+    log.debug("initiate fake disconnection sequence for " + this)
+    connectionActive = false
+    publish(Endpoint.Event.Disconnect(this))
+    true
+  }
+  def loopbackConnect(endpoint: LocalEndpoint) = {
     log.debug("connect %s to %s".format(this, endpoint))
     destination = Some(endpoint)
-  }
-  @log
-  protected def send(message: Message, key: Option[Array[Byte]], localHexapod: Hexapod, remoteHexapod: Hexapod, remoteEndpoint: Endpoint): Option[Endpoint] = remoteEndpoint match {
-    case remoteEndpoint: LoopbackEndpoint =>
-      log.debug("send message %s to %s via %s".format(message, remoteHexapod, this))
-      val rawMessage = message.createRawMessage(localHexapod, remoteHexapod, key)
-      val sub = new Communication.Sub {
-        def notify(pub: Communication.Pub, event: Communication.Event) = event match {
-          case Communication.Event.Sent(passed_message) if passed_message == message =>
-            Communication.removeSubscription(this)
-            destination.foreach(_.receive(rawMessage))
-          case _ =>
-        }
-      }
-      Communication.subscribe(sub)
-      Some(this)
-    case error =>
-      log.fatal("unexpected endpoint type: " + error)
-      None
   }
   @log
   def receive(message: Array[Byte]) = try {
@@ -70,35 +69,29 @@ class LoopbackEndpoint(
             NDC.push("R_" + hexapod.toString)
             hexapod.receive(message)
             NDC.pop
+            true
           case Some(hexapod) =>
             log.fatal("broken hexapod " + hexapod)
+            false
           case None =>
             log.fatal("lost destination hexapod")
+            false
         }
       case None =>
+        false
     }
   } catch {
     case e =>
       log.error(e.getMessage())
+      false
   }
-  def connect(): Boolean = {
-    log.debug("initiate fake connection sequence for " + this)
-    connected = true
-    publish(Endpoint.Event.Connect(this))
-    true
-  }
-  def reconnect() {}
-  def disconnect() {
-    log.debug("initiate fake disconnection sequence for " + this)
-    connected = false
-    publish(Endpoint.Event.Disconnect(this))
-  }
+  protected def send(message: Message, key: Option[Array[Byte]], remoteEndpoint: Endpoint[LocalEndpoint.Nature]): Boolean = false
   private def getDestination(message: Message): Option[Hexapod] =
     message.destinationHexapod match {
       case Some(hexapodUUID) =>
         this.destination match {
           case Some(dep) =>
-            if (dep.terminationPoint.get.exists(_.uuid == hexapodUUID)) {
+            if (dep.parent.get.exists(_.uuid == hexapodUUID)) {
               Mesh(hexapodUUID) match {
                 case Some(entity: Hexapod) =>
                   Some(entity)
@@ -107,7 +100,7 @@ class LoopbackEndpoint(
                   None
               }
             } else {
-              log.debug("unable to send message to %s via %s".format(hexapodUUID, dep.terminationPoint.get))
+              log.debug("unable to send message to %s via %s".format(hexapodUUID, dep.parent.get))
               None
             }
           case None =>
@@ -115,7 +108,25 @@ class LoopbackEndpoint(
             None
         }
       case None =>
-        this.destination.flatMap(_.terminationPoint.get)
+        this.destination.flatMap(_.parent.get)
     }
-  override def toString = "LoopbackEndpoint[%08X/%s]".format(terminationPoint.get.map(_.hashCode).getOrElse(0), direction)
+  override def toString = "LoopbackEndpoint[%08X/%s]".format(parent.get.map(_.hashCode).getOrElse(0), direction)
+}
+
+object LocalEndpoint extends Endpoint.Factory with Loggable {
+  val protocol = "local"
+  private val localEndpoints = new HashMap[UUID, LocalEndpoint] with SynchronizedMap[UUID, LocalEndpoint]
+
+  def fromSignature(hexapod: Hexapod, signature: String): Option[LocalEndpoint] = signature.split("'") match {
+    case Array(protocol, address, priority, Endpoint.Direction(direction), options @ _*) =>
+      Some(new LocalEndpoint(new WeakReference(hexapod), direction.reverse, new Nature(UUID.fromString(address))))
+    case _ =>
+      log.error("incorrect signature " + signature)
+      None
+  }
+
+  class Nature(val addr: UUID) extends Endpoint.Nature {
+    val protocol = LocalEndpoint.protocol
+    override def address() = addr.toString()
+  }
 }

@@ -29,7 +29,7 @@ import org.digimead.digi.lib.log.NDC
 import org.digimead.digi.lib.mesh.Mesh
 import org.digimead.digi.lib.mesh.communication.Communication
 import org.digimead.digi.lib.mesh.communication.Communication.communication2implementation
-import org.digimead.digi.lib.mesh.communication.Message
+import org.digimead.digi.lib.mesh.message.Message
 import org.digimead.digi.lib.mesh.hexapod.AppHexapod
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
 import org.digimead.digi.lib.mesh.message.Acknowledgement
@@ -37,11 +37,11 @@ import java.net.SocketException
 import org.digimead.digi.lib.aop.log
 
 class UDPEndpoint(
-  override val identifier: UDPEndpoint.TransportIdentifier,
-  override val terminationPoint: WeakReference[Hexapod],
-  override val direction: Endpoint.Direction)
-  extends Endpoint(identifier, terminationPoint, direction) with Loggable {
-  log.debug("%s %s".format(this, identifier))
+  val parent: WeakReference[Hexapod],
+  val direction: Endpoint.Direction,
+  val nature: UDPEndpoint.Nature) extends Endpoint[UDPEndpoint.Nature] {
+  val protocol = "udp"
+  log.debug("%s %s".format(this, nature))
   /** listen interface address, port */
   @volatile protected var receiveSocket: Option[DatagramSocket] = None
   protected val sendSocket = new DatagramSocket()
@@ -50,55 +50,14 @@ class UDPEndpoint(
   protected val buffer = new Array[Byte](4096)
 
   @log
-  protected def send(message: Message, key: Option[Array[Byte]], localHexapod: Hexapod, remoteHexapod: Hexapod, remoteEndpoint: Endpoint): Option[Endpoint] = remoteEndpoint match {
-    case remoteUDPEndpoint: UDPEndpoint =>
-      for {
-        addr <- remoteUDPEndpoint.identifier.addr
-        port <- remoteUDPEndpoint.identifier.port
-      } yield {
-        log.debug("send message %s via %s to %s:%s".format(message, remoteUDPEndpoint, addr, port))
-        val rawMessage = message.createRawMessage(localHexapod, remoteHexapod, None)
-        val data = new DatagramPacket(rawMessage, 0, rawMessage.length, addr, port)
-        sendSocket.send(data)
-        this
-      }
-    case error =>
-      log.fatal("unexpected endpoint type: " + error)
-      None
-  }
-  @log
-  def receive(message: Array[Byte]) = try {
-    Message.parseRawMessage(message, true) match {
-      case Some(message: Acknowledgement) =>
-        log.debug("receive message \"%s\" from %s with conversation hash %08X".format(message.word, message.sourceHexapod, message.conversationHash))
-        Communication.acknowledge(message.conversationHash)
-      case Some(message) =>
-        log.debug("receive message \"%s\" from %s".format(message.word, message.sourceHexapod))
-        message.destinationHexapod.flatMap(Mesh(_)) match {
-          case Some(hexapod: AppHexapod) =>
-            NDC.push("R_" + hexapod.toString)
-            hexapod.receive(message)
-            NDC.pop
-          case Some(hexapod) =>
-            log.fatal("broken hexapod " + hexapod)
-          case None =>
-            log.fatal("lost destination hexapod")
-        }
-      case None =>
-    }
-  } catch {
-    case e =>
-      log.error(e.getMessage())
-  }
-  @log
   def connect(): Boolean = synchronized {
     receiveSocket.map(_.close())
-    receiveSocket = identifier match {
-      case UDPEndpoint.TransportIdentifier(Some(bindaddr), Some(port), _) =>
+    receiveSocket = nature match {
+      case UDPEndpoint.Nature(Some(bindaddr), Some(port)) =>
         Some(new DatagramSocket(port, bindaddr))
-      case UDPEndpoint.TransportIdentifier(None, Some(port), _) =>
+      case UDPEndpoint.Nature(None, Some(port)) =>
         Some(new DatagramSocket(port))
-      case UDPEndpoint.TransportIdentifier(_, None, _) =>
+      case UDPEndpoint.Nature(_, None) =>
         None
     }
     packet = receiveSocket.map(_ => new DatagramPacket(buffer, buffer.length))
@@ -107,8 +66,8 @@ class UDPEndpoint(
       packet <- packet
     } yield {
       assert(direction == Endpoint.Direction.In || direction == Endpoint.Direction.InOut, "illegal server for Endpoint.Direction.Out direction")
-      val thread = new Thread("UDPEndpoint server at %s:%s".format(identifier.addr.getOrElse("0.0.0.0"), identifier.port.get)) {
-        log.info("bind %s to %s:%s".format(UDPEndpoint.this, identifier.addr.getOrElse("0.0.0.0"), identifier.port.get))
+      val thread = new Thread("UDPEndpoint server at %s:%s".format(nature.addr.getOrElse("0.0.0.0"), nature.port.get)) {
+        log.info("bind %s to %s:%s".format(UDPEndpoint.this, nature.addr.getOrElse("0.0.0.0"), nature.port.get))
         this.setDaemon(true)
         @tailrec
         override def run() = {
@@ -137,26 +96,57 @@ class UDPEndpoint(
       thread.start
       thread
     }
-    connected = true
+    connectionActive = true
     publish(Endpoint.Event.Connect(this))
     true
   }
   @log
-  def reconnect() {}
-  @log
   def disconnect() = synchronized {
     serverThread = None
     receiveSocket.map(_.close())
-    connected = false
+    connectionActive = false
     publish(Endpoint.Event.Disconnect(this))
+    true
   }
-  override def toString = "UDPEndpoint[%08X/%s]".format(terminationPoint.get.map(_.hashCode).getOrElse(0), direction)
+  @log
+  def receive(message: Array[Byte]) = try {
+    Message.parseRawMessage(message, true) match {
+      case Some(message: Acknowledgement) =>
+        log.debug("receive message \"%s\" from %s with conversation hash %08X".format(message.word, message.sourceHexapod, message.conversationHash))
+        Communication.acknowledge(message.conversationHash)
+        true
+      case Some(message) =>
+        log.debug("receive message \"%s\" from %s".format(message.word, message.sourceHexapod))
+        message.destinationHexapod.flatMap(Mesh(_)) match {
+          case Some(hexapod: AppHexapod) =>
+            NDC.push("R_" + hexapod.toString)
+            hexapod.receive(message)
+            NDC.pop
+            true
+          case Some(hexapod) =>
+            log.fatal("broken hexapod " + hexapod)
+            false
+          case None =>
+            log.fatal("lost destination hexapod")
+            false
+        }
+      case None =>
+        false
+    }
+  } catch {
+    case e =>
+      log.error(e.getMessage())
+      false
+  }
+  @log
+  protected def send(message: Message, key: Option[Array[Byte]], remoteEndpoint: Endpoint[UDPEndpoint.Nature]): Boolean = false
+  override def toString = "UDPEndpoint[%08X/%s]".format(parent.get.map(_.hashCode).getOrElse(0), direction)
 }
 
 object UDPEndpoint {
-  case class TransportIdentifier(addr: Option[InetAddress] = None, port: Option[Int] = None,
-    holderClass: Class[_ <: UDPEndpoint])
-    extends Endpoint.TransportIdentifier {
-    def signature() = "%s %s".format(holderClass.getName, addr.getOrElse("") + ":" + port.getOrElse(""))
+  class Nature(override val addr: Option[InetAddress] = None,
+    override val port: Option[Int] = None) extends UDPRemoteEndpoint.Nature(addr, port)
+  object Nature {
+    def unapply(nature: Nature) = Some(nature.addr, nature.port)
   }
 }

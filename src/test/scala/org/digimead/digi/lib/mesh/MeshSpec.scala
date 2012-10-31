@@ -23,41 +23,47 @@ class MeshSpec_j1 extends FunSpec with ShouldMatchers with TestHelperLogging wit
     val custom = new NewBindingModule(module => {
       module.bind[Mesh.Interface] toModuleSingle { implicit module => new MyMesh }
     })
-    DependencyInjection.set(custom ~ org.digimead.digi.lib.mesh.default ~ defaultConfig(test.configMap))
+    DependencyInjection.set(custom ~ org.digimead.digi.lib.mesh.default ~ defaultConfig(test.configMap), { Mesh })
     withLogging(test.configMap) {
       test(test.configMap)
     }
   }
 
-  def resetConfig() = DependencyInjection.reset(DependencyInjection() ~ new NewBindingModule(module => {}))
+  def resetConfig(newConfig: NewBindingModule = new NewBindingModule(module => {})) = DependencyInjection.reset(newConfig ~ DependencyInjection())
 
   describe("A Mesh") {
     it("should be the same even after reinitialization") {
       config =>
-        resetConfig
+        Mesh().foreach(Mesh.unregister)
+        resetConfig()
         val mesh1 = DependencyInjection().inject[Peer.Interface](None)
-        resetConfig
+        resetConfig()
         val mesh2 = DependencyInjection().inject[Peer.Interface](None)
         mesh1 should be theSameInstanceAs mesh1
     }
     it("should register and unregister hexapods and do garbage collection") {
       conf =>
-        resetConfig
-        val entity = Mesh.instance.asInstanceOf[MyMesh].getEntity
-        val gcLimit = Mesh.instance.asInstanceOf[MyMesh].getGCLimit
-        val gcCounter = Mesh.instance.asInstanceOf[MyMesh].getGCCounter
-        val hexapod = new Hexapod(UUID.randomUUID())
+        Mesh().foreach(Mesh.unregister)
+        log.___glance("begin clearing Mesh")
+        resetConfig()
+        // Mesh persistent
+        log.___glance("complete clearing Mesh")
+        val entity = Mesh.inner.asInstanceOf[MyMesh].getEntity
+        val gcLimit = Mesh.inner.asInstanceOf[MyMesh].getGCLimit
+        val gcCounter = Mesh.inner.asInstanceOf[MyMesh].getGCCounter
+        log.___glance("start tests " + Mesh().mkString(","))
         gcCounter.get should equal(gcLimit)
-        entity should be('empty)
+        entity should be ('empty)
+        log.___glance("stop tests " + Mesh().mkString(","))
 
-        Mesh.register(hexapod) should be(true)
+        val hexapod = Hexapod(UUID.randomUUID())
         gcCounter.get should be(gcLimit - 1)
         entity should have size (1)
         Mesh.register(hexapod) should be(false)
 
         Mesh.unregister(hexapod) should be(true)
         gcCounter.get should be(gcLimit - 1)
-        entity should be('empty)
+        entity should be ('empty)
         Mesh.unregister(hexapod) should be(false)
 
         Mesh.register(hexapod)
@@ -65,24 +71,26 @@ class MeshSpec_j1 extends FunSpec with ShouldMatchers with TestHelperLogging wit
         for (i <- 1 to gcLimit - 2)
           entity(UUID.randomUUID()) = new WeakReference(null)
         entity should have size (gcLimit - 1)
-        Mesh.register(new Hexapod(UUID.randomUUID()))
+        Hexapod(UUID.randomUUID())
         entity.size should be(2)
         gcCounter.get should be(gcLimit)
     }
     it("should provide access to registered entities") {
       config =>
-        resetConfig
-        val entity = Mesh.instance.asInstanceOf[MyMesh].getEntity
-        val hexapod = new Hexapod(UUID.randomUUID())
+        Mesh().foreach(Mesh.unregister)
+        resetConfig()
+        val entity = Mesh.inner.asInstanceOf[MyMesh].getEntity
+        val hexapod = Hexapod(UUID.randomUUID())
 
-        Mesh.register(hexapod) should be(true)
+        // AppHexapod already registered
         entity should have size (1)
         Mesh(hexapod.uuid) should be(Some(hexapod))
-        Mesh() should not be ('empty)
+        Mesh() should have size (1)
     }
     it("should publish register and unregister events") {
       config =>
-        resetConfig
+        Mesh().foreach(Mesh.unregister)
+        resetConfig()
         var event: Mesh.Event = null
         val subscriber = new Mesh.Sub {
           override def notify(pub: Mesh.Pub, evt: Mesh.Event) {
@@ -91,8 +99,7 @@ class MeshSpec_j1 extends FunSpec with ShouldMatchers with TestHelperLogging wit
           }
         }
         Mesh.subscribe(subscriber)
-        val hexapod = new Hexapod(UUID.randomUUID())
-        Mesh.register(hexapod)
+        val hexapod = Hexapod(UUID.randomUUID())
         expectDefined(event) { case Mesh.Event.Register(hexapod) => }
 
         event = null

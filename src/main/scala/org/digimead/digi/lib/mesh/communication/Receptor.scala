@@ -18,7 +18,7 @@
 
 package org.digimead.digi.lib.mesh.communication
 
-trait Receptor extends java.io.Serializable {
+trait Receptor {
   /**
    * None - skip
    * Some(true) - remove Receptor from Communication pull, communication success

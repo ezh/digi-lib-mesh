@@ -19,6 +19,7 @@
 package org.digimead.digi.lib.enc
 
 import org.digimead.digi.lib.DependencyInjection
+import org.digimead.digi.lib.aop.log
 import org.digimead.digi.lib.log.logger.RichLogger.rich2slf4j
 import org.digimead.lib.test.TestHelperLogging
 import org.scalatest.fixture.FunSuite

@@ -19,7 +19,6 @@
 package org.digimead.digi.lib.mesh.message
 
 import java.util.UUID
-import org.digimead.digi.lib.mesh.communication.Message
 import org.digimead.digi.lib.mesh.communication.Stimulus
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
 import org.digimead.digi.lib.mesh.hexapod.Hexapod.hexapod2app

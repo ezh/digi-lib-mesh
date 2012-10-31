@@ -16,49 +16,51 @@
  * limitations under the License.
  */
 
-package org.digimead.digi.lib.mesh.communication
+package org.digimead.digi.lib.mesh.message
 
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.util.UUID
-
-import scala.collection.mutable.HashMap
-import scala.collection.mutable.SynchronizedMap
-import scala.math.BigInt.int2bigInt
-
+import org.digimead.digi.lib.DependencyInjection
+import org.digimead.digi.lib.DependencyInjection.PersistentInjectable
+import org.digimead.digi.lib.aop.log
 import org.digimead.digi.lib.enc.Simple
 import org.digimead.digi.lib.log.Loggable
+import org.digimead.digi.lib.log.logger.RichLogger.rich2slf4j
 import org.digimead.digi.lib.mesh.Mesh
+import org.digimead.digi.lib.mesh.Mesh.mesh2implementation
+import org.digimead.digi.lib.mesh.communication.Communication
 import org.digimead.digi.lib.mesh.communication.Communication.communication2implementation
+import org.digimead.digi.lib.mesh.communication.Receptor
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
 import org.digimead.digi.lib.mesh.hexapod.Hexapod.hexapod2app
-import org.digimead.digi.lib.mesh.message.Acknowledgement
-
 import javax.crypto.BadPaddingException
+import org.digimead.digi.lib.mesh.endpoint.Endpoint
 
 abstract class Message(
   val word: String,
   val sourceHexapod: UUID,
   val destinationHexapod: Option[UUID],
   val conversation: UUID = UUID.randomUUID(),
-  val timestamp: Long = System.currentTimeMillis()) extends Receptor {
+  val timestamp: Long = System.currentTimeMillis()) extends Receptor with Loggable with java.io.Serializable {
   val distance: Byte = 0
   val isReplyRequired: Boolean
-  val timeToLive: Long = Communication.holdTimeToLive
+  val timeToLive: Long = Communication.holdTTL
   assert(word.nonEmpty, "word of message is absent")
   protected lazy val labelSuffix = Mesh(sourceHexapod) + "->" + destinationHexapod.flatMap(Mesh(_))
   val messageType: Message.Type.Value
 
   def content(): Array[Byte]
   def createRawMessage(from: Hexapod, to: Hexapod, rawKey: Option[Array[Byte]]): Array[Byte] = {
+    log.debug("create raw message %s -> %s".format(from, to))
     val baos = new ByteArrayOutputStream()
     val w = new DataOutputStream(baos)
     // write message type
     messageType match {
       case Message.Type.Standard if rawKey.isEmpty =>
-        w.writeByte(Message.Type.Unencripted.id)
+        w.writeByte(Message.Type.Unencrypted.id)
       case _ =>
         w.writeByte(messageType.id)
     }
@@ -104,15 +106,45 @@ abstract class Message(
   }
 }
 
-object Message extends Loggable {
-  @volatile var aaa: BigInt = 0
-  private val messageMap = new HashMap[String, MessageBuilder] with SynchronizedMap[String, MessageBuilder]
+object Message extends PersistentInjectable with Loggable {
+  assert(org.digimead.digi.lib.mesh.isReady, "Mesh not ready, please build it first")
+  implicit def bindingModule = DependencyInjection()
+  @volatile private var factory = (inject[Seq[Factory]] map (factory => factory.word -> factory) toMap)
+  /** number of hexapods that added to original destination */
+  @volatile private var recipientRedundancy = 1
+  Communication // start initialization if needed
 
-  def add(word: String, builder: MessageBuilder) = {
-    assert(!messageMap.contains(word), "message with word \"%s\" already defined".format(word))
-    messageMap(word) = builder
+  def apply(rawMessage: Array[Byte], sendAcknowledgementIfSuccess: Boolean): Option[Message] =
+    parseRawMessage(rawMessage, sendAcknowledgementIfSuccess)
+  def getRecipients(message: Message): Seq[Hexapod] = {
+    log.debug("get recipients for message " + message)
+    /*
+     * add 1st recipient if it is exists and has suitable endpoints
+     */
+    var recipients = message.destinationHexapod.flatMap(Mesh(_).map {
+      hexapod =>
+        /*
+         * 1. for all endpoints with Out/InOut of local hexapod do 'exists'
+         *  2. in all endpoints with In/InOut of remote hexapod do 'exists'
+         *   3. suitable
+         */
+        val available = Hexapod.getEndpoints.filter(ep => ep.direction == Endpoint.Direction.Out ||
+          ep.direction == Endpoint.Direction.InOut).exists(lEndpoint =>
+          hexapod.getEndpoints.filter(ep => ep.direction == Endpoint.Direction.In ||
+            ep.direction == Endpoint.Direction.InOut).exists(rEndpoint => lEndpoint.suitable(rEndpoint)))
+        if (available) {
+          log.debug("add hexapod %s to recipient list")
+          Seq(hexapod)
+        } else {
+          log.debug("skip hexapod %s for recipient list, no suitable endpoints")
+          Seq()
+        }
+    }) getOrElse Seq()
+    /*
+     * add redundant recipients from Peer.pool if needed
+     */
+    recipients
   }
-  def apply(rawMessage: Array[Byte], sendAcknowledgementIfSuccess: Boolean): Option[Message] = parseRawMessage(rawMessage, sendAcknowledgementIfSuccess)
   def parseRawMessage(rawMessage: Array[Byte], sendAcknowledgementIfSuccess: Boolean): Option[Message] = {
     val bais = new ByteArrayInputStream(rawMessage)
     val r = new DataInputStream(bais)
@@ -127,11 +159,8 @@ object Message extends Loggable {
     r.close()
     assert(actualBodyLength == bodyLength, "raw message body is incomplete %d vs %d".format(bodyLength, actualBodyLength))
     val fromHexapodUUID = new UUID(fromHexapodMSB, fromHexapodLSB)
-    val fromHexapod: Hexapod = Mesh(fromHexapodUUID) match {
-      case Some(hexapod: Hexapod) => hexapod
-      case _ => new Hexapod(fromHexapodUUID)
-    }
-    val decryptedBody = if (messageType == Message.Type.Unencripted.id) {
+    val fromHexapod: Hexapod = Hexapod(fromHexapodUUID)
+    val decryptedBody = if (messageType == Message.Type.Unencrypted.id) {
       body
     } else {
       Hexapod.getKeyForHexapod(fromHexapod) match {
@@ -146,7 +175,7 @@ object Message extends Loggable {
               return None
           }
         case None =>
-          log.error("unable to decrypt: %s<->%s session key not found".format(fromHexapod, Hexapod.instance))
+          log.error("unable to decrypt: %s<->%s session key not found".format(fromHexapod, Hexapod.inner))
           return None
       }
     }
@@ -158,13 +187,18 @@ object Message extends Loggable {
       log.warn("drop message %s, maximum distance riched")
       return None
     }
-    messageMap.get(word) match {
-      case Some(builder) =>
-        builder.buildMessage(fromHexapod, toHexapod, conversation, timestamp, word, (distance + 1).toByte, content)
+    factory.get(word) match {
+      case Some(factory) =>
+        factory.build(fromHexapod, toHexapod, conversation, timestamp, word, (distance + 1).toByte, content)
       case None =>
         log.warn("unable to parse message \"%s\" from %s".format(word, fromHexapod))
         None
     }
+  }
+  def commitInjection() { factory.values.foreach(Communication.registerGlobal) }
+  def updateInjection() = {
+    factory.values.foreach(Communication.unregisterGlobal)
+    factory = (inject[Seq[Factory]] map (factory => factory.word -> factory) toMap)
   }
   private def parseRawMessageBody(body: Array[Byte]): (Hexapod, UUID, Long, String, Byte, Array[Byte]) = {
     val bais = new ByteArrayInputStream(body)
@@ -185,23 +219,23 @@ object Message extends Loggable {
     r.close()
     assert(actualContentLength == contentLength, "raw message content is incomplete %d vs %d".format(contentLength, actualContentLength))
     val toHexapodUUID = new UUID(toHexapodMSB, toHexapodLSB)
-    val toHexapod: Hexapod = Mesh(toHexapodUUID) match {
-      case Some(hexapod: Hexapod) => hexapod
-      case _ => new Hexapod(toHexapodUUID)
-    }
+    val toHexapod: Hexapod = Hexapod(toHexapodUUID)
     val conversationUUID = new UUID(conversationMSB, conversationLSB)
     (toHexapod, conversationUUID, creationTimestamp, word, distance, content)
   }
 
-  trait Type extends Enumeration {
+  /**
+   * marker with message group
+   */
+  object Type extends Enumeration {
     val Acknowledgement = Value(0)
-    val Unencripted = Value(1)
+    val Unencrypted = Value(1)
     val Standard = Value(2)
   }
-  object Type extends Type
-  trait MessageBuilder {
+  trait Factory extends Receptor {
+    val word: String
     /** recreate message from various parameters */
-    def buildMessage(from: Hexapod, to: Hexapod, conversation: UUID, timestamp: Long, word: String, distance: Byte, content: Array[Byte]): Option[Message]
+    def build(from: Hexapod, to: Hexapod, conversation: UUID, timestamp: Long, word: String, distance: Byte, content: Array[Byte]): Option[Message]
   }
 }
 

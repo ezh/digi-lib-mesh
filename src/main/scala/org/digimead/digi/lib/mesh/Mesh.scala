@@ -21,6 +21,7 @@ package org.digimead.digi.lib.mesh
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
 
+import scala.Option.option2Iterable
 import scala.collection.mutable.HashMap
 import scala.collection.mutable.Publisher
 import scala.collection.mutable.Subscriber
@@ -32,7 +33,10 @@ import org.digimead.digi.lib.DependencyInjection.PersistentInjectable
 import org.digimead.digi.lib.aop.log
 import org.digimead.digi.lib.log.Loggable
 import org.digimead.digi.lib.log.logger.RichLogger.rich2slf4j
+import org.digimead.digi.lib.mesh.communication.Communication
+import org.digimead.digi.lib.mesh.endpoint.Endpoint
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
+import org.digimead.digi.lib.mesh.message.Message
 import org.scala_tools.subcut.inject.BindingModule
 import org.scala_tools.subcut.inject.Injectable
 
@@ -50,7 +54,7 @@ class Mesh(implicit val bindingModule: BindingModule) extends Injectable with Me
    */
   @log
   def register(hexapod: Hexapod): Boolean = {
-    log.debug("register entity " + hexapod)
+    log.debug("register hexapod " + hexapod)
     if (entity.contains(hexapod.uuid)) {
       log.error("hexapod %s already registered".format(hexapod))
       return false
@@ -68,7 +72,7 @@ class Mesh(implicit val bindingModule: BindingModule) extends Injectable with Me
    */
   @log
   def unregister(hexapod: Hexapod): Boolean = {
-    log.debug("unregister entity " + hexapod)
+    log.debug("unregister hexapod " + hexapod)
     if (!entity.contains(hexapod.uuid)) {
       log.error("hexapod %s not registered".format(hexapod))
       return false
@@ -93,6 +97,8 @@ class Mesh(implicit val bindingModule: BindingModule) extends Injectable with Me
 
 /**
  * Singleton Mesh contains global registry of discovered Hexapods
+ * Mesh -> Message -> Communication -> Hexapod -> Endpoint
+ *                                  -> Peer
  */
 object Mesh extends PersistentInjectable with Loggable {
   type Pub = Publisher[Event]
@@ -100,11 +106,13 @@ object Mesh extends PersistentInjectable with Loggable {
   implicit def mesh2implementation(m: Mesh.type): Interface = m.implementation
   implicit def bindingModule = DependencyInjection()
   @volatile private var implementation = inject[Interface]
+  log.debug("build mesh infrastructure")
+  org.digimead.digi.lib.mesh.isReady = true
+  Message // start initialization if needed
 
-  def instance() = implementation
-  def reloadInjection() {
-    implementation = inject[Interface]
-  }
+  def inner() = implementation
+  def commitInjection() {}
+  def updateInjection() { implementation = inject[Interface] }
 
   trait Interface extends Mesh.Pub with Loggable {
     protected val entity: HashMap[UUID, WeakReference[Hexapod]]

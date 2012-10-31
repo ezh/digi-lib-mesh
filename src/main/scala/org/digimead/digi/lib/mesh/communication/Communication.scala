@@ -23,18 +23,27 @@ import scala.collection.mutable.Publisher
 import scala.collection.mutable.Subscriber
 import scala.collection.mutable.SynchronizedMap
 
+import org.digimead.digi.lib.DependencyInjection
+import org.digimead.digi.lib.DependencyInjection.PersistentInjectable
 import org.digimead.digi.lib.aop.log
 import org.digimead.digi.lib.log.Loggable
 import org.digimead.digi.lib.log.logger.RichLogger.rich2slf4j
 import org.digimead.digi.lib.mesh.Mesh
+import org.digimead.digi.lib.mesh.Mesh.mesh2implementation
 import org.digimead.digi.lib.mesh.Peer
 import org.digimead.digi.lib.mesh.Peer.peer2implementation
 import org.digimead.digi.lib.mesh.hexapod.AppHexapod
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
 import org.digimead.digi.lib.mesh.hexapod.Hexapod.hexapod2app
 import org.digimead.digi.lib.mesh.message.Acknowledgement
+import org.digimead.digi.lib.mesh.message.Message
+import org.scala_tools.subcut.inject.BindingModule
+import org.scala_tools.subcut.inject.Injectable
 
-class Communication extends Communication.Interface {
+class Communication(implicit val bindingModule: BindingModule) extends Injectable with Communication.Interface {
+  val deliverMax = injectIfBound[Int]("Mesh.Communication.DeliverMax") { 3 }
+  val deliverTTL = injectIfBound[Long]("Mesh.Communication.DeliverTTL") { 60000L } // 1 minute
+  val holdTTL = injectIfBound[Long]("Mesh.Communication.HoldTTL") { 3600000L } // 1 hour
   /** acknowledgment messages buffer */
   @volatile protected var acknowledgement = Seq[Acknowledgement]()
   /** global Seq[Receptor] */
@@ -51,7 +60,6 @@ class Communication extends Communication.Interface {
       case Hexapod.Event.SetDiffieHellman(hexapod) =>
     }
   }
-  Hexapod.subscribe(appHexapodSubscriber)
   protected val peerSubscriber = new Peer.Sub {
     def notify(pub: Peer.Pub, event: Peer.Event): Unit = event match {
       case Peer.Event.Add(hexapod) =>
@@ -60,7 +68,6 @@ class Communication extends Communication.Interface {
       case Peer.Event.Remove(hexapod) =>
     }
   }
-  Peer.subscribe(peerSubscriber)
 
   def registerGlobal(receptor: Receptor): Unit = synchronized {
     log.debug("add new receptor to global buffer")
@@ -138,10 +145,22 @@ class Communication extends Communication.Interface {
     }
     None
   }
+  @log
   def processMessages() = synchronized {
     compactMessages()
     deliverMessages()
   }
+  @log
+  protected[communication] def init() {
+    Hexapod.subscribe(appHexapodSubscriber)
+    Peer.subscribe(peerSubscriber)
+  }
+  @log
+  protected[communication] def deinit() {
+    Peer.removeSubscription(peerSubscriber)
+    Hexapod.removeSubscription(appHexapodSubscriber)
+  }
+
   @log
   protected def deliverMessages() = {
     acknowledgement.foreach(acknowledgement => deliverAcknowledgementMessage(acknowledgement))
@@ -154,8 +173,8 @@ class Communication extends Communication.Interface {
         deliverMessageCounter(word) = deliverMessageCounter.get(word).getOrElse(0) - 1
       case (word, parcel @ Communication.Parcel(message, Communication.Condition.Sent)) =>
         // try to resend messages only at next deliver attempt
-        if ((System.currentTimeMillis() - message.timestamp) / Communication.deliverTimeToLive == parcel.counter) {
-          if (parcel.counter < Communication.deliverMax) {
+        if ((System.currentTimeMillis() - message.timestamp) / deliverTTL == parcel.counter) {
+          if (parcel.counter < deliverMax) {
             log.debug("resend message %s, attempt #%d".format(message, parcel.counter + 1))
             deliverMessageCounter(word) = deliverMessageCounter.get(word).getOrElse(0) + 1
             if (deliverMessageCounter(word) == 1)
@@ -203,6 +222,7 @@ class Communication extends Communication.Interface {
         log.error(e.getMessage(), e)
     }
   }
+  @log
   protected def compactMessages() = synchronized {
     acknowledgement.foreach {
       acknowledgement =>
@@ -213,15 +233,15 @@ class Communication extends Communication.Interface {
     }
     buffer.foreach {
       case (word, parcel @ Communication.Parcel(message, Communication.Condition.Pending)) =>
-        if (System.currentTimeMillis() - message.timestamp > Communication.deliverTimeToLive * Communication.deliverMax) {
+        if (System.currentTimeMillis() - message.timestamp > deliverTTL * deliverMax) {
           log.debug("conversation %s with message %s failed, delivery time expired".format(message.conversation, message))
           buffer.remove(word)
           deliverMessageCounter.remove(word)
           publish(Communication.Event.Fail(message))
         }
       case (word, parcel @ Communication.Parcel(message, Communication.Condition.Sent)) =>
-        if ((System.currentTimeMillis() - message.timestamp) / Communication.deliverTimeToLive == parcel.counter) {
-          if (parcel.counter >= Communication.deliverMax) {
+        if ((System.currentTimeMillis() - message.timestamp) / deliverTTL == parcel.counter) {
+          if (parcel.counter >= deliverMax) {
             log.debug("conversation %s with message %s failed, delivery time expired".format(message.conversation, message))
             buffer.remove(word)
             deliverMessageCounter.remove(word)
@@ -240,27 +260,31 @@ class Communication extends Communication.Interface {
   override def toString = "default communication implemetation"
 }
 
-object Communication extends Loggable {
+object Communication extends PersistentInjectable with Loggable {
+  assert(org.digimead.digi.lib.mesh.isReady, "Mesh not ready, please build it first")
   type Pub = Publisher[Event]
   type Sub = Subscriber[Event, Pub]
   implicit def communication2implementation(communication: Communication.type): Interface = communication.implementation
-  private var implementation: Interface = null
-  private var deliverMax = 3
-  private var deliverTTL = 60000L // 1 minute
-  private var holdTTL = 3600000L // 1 hour
+  implicit def bindingModule = DependencyInjection()
+  @volatile private var implementation: Interface = inject[Interface]
+  Hexapod // start initialization if needed
+  Peer // start initialization if needed
 
-  def init(arg: Init): Unit = synchronized {
-    log.debug("initialize communication with " + arg.implementation)
-    implementation = arg.implementation
-    deliverMax = arg.deliverMax
-    deliverTTL = arg.deliverTTL
-    holdTTL = arg.holdTTL
+  def inner() = implementation
+  def commitInjection() { implementation.init() }
+  def updateInjection() {
+    implementation.deinit()
+    implementation = inject[Interface]
   }
-  def isInitialized(): Boolean = implementation != null
-  def holdTimeToLive = holdTTL
-  def deliverTimeToLive = deliverTTL
 
   trait Interface extends Communication.Pub with Receptor with Loggable {
+    /** Number of deliver attempt */
+    val deliverMax: Int
+    /** Amount of time for deliver attempt */
+    val deliverTTL: Long
+    /** Amount of time that message hold in communication buffer */
+    val holdTTL: Long
+    /** registry of global callbacks */
     protected var global: Seq[Receptor]
     protected var acknowledgement: Seq[Acknowledgement]
     protected val buffer: HashMap[String, Parcel]
@@ -270,6 +294,8 @@ object Communication extends Loggable {
     def acknowledge(conversationHash: Int)
     def push(message: Message, force: Boolean = false): Boolean
     def processMessages()
+    protected[communication] def init()
+    protected[communication] def deinit()
     override protected def publish(event: Communication.Event) = try {
       super.publish(event)
     } catch {
@@ -277,21 +303,13 @@ object Communication extends Loggable {
         log.error(e.getMessage(), e)
     }
   }
-  trait Init {
-    val implementation: Interface
-    val deliverMax: Int
-    val deliverTTL: Long
-    val holdTTL: Long
-  }
-  class DefaultInit extends Init {
-    val implementation: Interface = new Communication
-    val deliverMax = 3
-    val deliverTTL = 60000L
-    val holdTTL = 3600000L
-  }
 
-  case class Parcel(val message: Message, var condition: Condition) {
-    var counter: Int = 0
+  /**
+   * message wrapper, that contain delivery status
+   */
+  case class Parcel(val message: Message, initialCondition: Condition) {
+    @volatile var condition: Condition = initialCondition
+    @volatile var counter: Int = 0
   }
 
   sealed trait Condition

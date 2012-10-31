@@ -16,20 +16,20 @@
  * limitations under the License.
  */
 
-package org.digimead.digi.lib.mesh.hexapod
+package org.digimead.digi.lib.mesh.endpoint
 
-import java.util.UUID
+import java.net.InetAddress
+
+import scala.ref.WeakReference
 
 import org.digimead.digi.lib.DependencyInjection
-import org.digimead.digi.lib.aop.log
 import org.digimead.digi.lib.mesh.Mesh
-import org.digimead.digi.lib.mesh.Mesh.mesh2implementation
 import org.digimead.lib.test.TestHelperLogging
 import org.scala_tools.subcut.inject.NewBindingModule
-import org.scalatest.fixture.FunSuite
+import org.scalatest.fixture.FunSpec
 import org.scalatest.matchers.ShouldMatchers
 
-class AppHexapodTest_j1 extends FunSuite with ShouldMatchers with TestHelperLogging {
+class UDPRemoteEndpointSpec_j1 extends FunSpec with ShouldMatchers with TestHelperLogging {
   type FixtureParam = Map[String, Any]
 
   override def withFixture(test: OneArgTest) {
@@ -42,27 +42,18 @@ class AppHexapodTest_j1 extends FunSuite with ShouldMatchers with TestHelperLogg
 
   def resetConfig(newConfig: NewBindingModule = new NewBindingModule(module => {})) = DependencyInjection.reset(newConfig ~ DependencyInjection())
 
-  test("AppHexapod DiffieHellman initialization test") {
-    conf =>
-      Mesh.subscribe(new Mesh.Sub {
-        def notify(pub: Mesh.Pub, event: Mesh.Event) = event match {
-          case Mesh.Event.Register(appHexapod: AppHexapod) =>
-            // overwrite DiffieHellman while initialization
-            appHexapod.setDiffieHellman(1, BigInt(1), BigInt(1), BigInt(1))
-          case _ =>
-        }
-      })
-      val uuid = UUID.randomUUID()
-      val local = new AppHexapod(uuid)
-      val custom = new NewBindingModule(module => {
-        module.bind[Hexapod.AppHexapod] toSingle { local }
-      })
-      resetConfig(custom)
-      Hexapod
-      val dh = local.getDiffieHellman.get
-      assert(dh.g === 1)
-      assert(dh.p === BigInt(1))
-      assert(dh.publicKey === (1))
-      assert(dh.secretKey === (1))
+  describe("A UDPRemoteEndpointSpec") {
+    it("should have (de)serialization via signature") {
+      config =>
+        val ep = new UDPRemoteEndpoint(new WeakReference(null), Endpoint.Direction.In,
+          new UDPRemoteEndpoint.Nature(Some(InetAddress.getLocalHost()), Some(12345)))
+        ep.nature.address should be("127.0.0.1:12345")
+        ep.nature.toString should be("udp://127.0.0.1:12345")
+        ep.signature should be("udp'127.0.0.1:12345'10'Out'")
+        val serialized = ep.signature
+        val epCopy = Endpoint.fromSignature(null, serialized)
+        epCopy.get.nature.toString should be(ep.nature.toString)
+        epCopy.get.signature.toString should be(ep.signature.toString)
+    }
   }
 }

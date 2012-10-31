@@ -58,6 +58,7 @@ class Peer(implicit val bindingModule: BindingModule) extends Injectable with Pe
         return false
       }
     pool += hexapod
+    log.___glance("PUBLISH")
     publish(Peer.Event.Add(hexapod))
     true
   }
@@ -104,16 +105,16 @@ class Peer(implicit val bindingModule: BindingModule) extends Injectable with Pe
  * Singleton Peer contains global registry of discovered Hexapods
  */
 object Peer extends PersistentInjectable with Loggable {
+  assert(org.digimead.digi.lib.mesh.isReady, "Mesh not ready, please build it first")
   type Pub = Publisher[Event]
   type Sub = Subscriber[Event, Pub]
   implicit def peer2implementation(p: Peer.type): Interface = p.implementation
   implicit def bindingModule = DependencyInjection()
   @volatile private var implementation = inject[Interface]
 
-  def instance() = implementation
-  def reloadInjection() {
-    implementation = inject[Interface]
-  }
+  def inner() = implementation
+  def commitInjection() {}
+  def updateInjection() { implementation = inject[Interface] }
 
   trait Interface extends Peer.Pub with Loggable {
     protected val pool: Buffer[Hexapod]

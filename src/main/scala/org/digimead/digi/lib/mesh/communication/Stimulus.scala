@@ -18,6 +18,8 @@
 
 package org.digimead.digi.lib.mesh.communication
 
+import org.digimead.digi.lib.mesh.message.Message
+
 trait Stimulus
 
 object Stimulus {

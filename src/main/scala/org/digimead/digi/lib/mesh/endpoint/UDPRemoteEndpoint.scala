@@ -18,25 +18,61 @@
 
 package org.digimead.digi.lib.mesh.endpoint
 
+import java.net.InetAddress
+
 import scala.Option.option2Iterable
 import scala.ref.WeakReference
 
-import org.digimead.digi.lib.mesh.communication.Message
+import org.digimead.digi.lib.log.Loggable
+import org.digimead.digi.lib.log.logger.RichLogger.rich2slf4j
+import org.digimead.digi.lib.mesh.message.Message
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
 
 class UDPRemoteEndpoint(
-  override val identifier: UDPEndpoint.TransportIdentifier,
-  override val terminationPoint: WeakReference[Hexapod],
-  override val direction: Endpoint.Direction)
-  extends UDPEndpoint(identifier, terminationPoint, direction) {
-  assert(identifier.addr.nonEmpty && identifier.port.nonEmpty, "UDPRemoteEndpoint transportIdentifier incomlete: address %s / port %s".
-    format(identifier.addr, identifier.port))
-  override protected val sendSocket = null
+  val parent: WeakReference[Hexapod],
+  val direction: Endpoint.Direction,
+  val nature: UDPRemoteEndpoint.Nature) extends Endpoint[UDPRemoteEndpoint.Nature] {
+  assert(nature.addr.nonEmpty && nature.port.nonEmpty, "UDPRemoteEndpoint transportIdentifier incomlete: address %s / port %s".
+    format(nature.addr, nature.port))
 
-  override def send(message: Message): Option[Endpoint] = throw new UnsupportedOperationException
+  def send(message: Message): Option[Endpoint.Nature] = throw new UnsupportedOperationException
   override def receive(message: Array[Byte]) = throw new UnsupportedOperationException
   override def connect(): Boolean = throw new UnsupportedOperationException
-  override def reconnect() = throw new UnsupportedOperationException
-  override def disconnect() = throw new UnsupportedOperationException
-  override def toString = "UDPRemoteEndpoint[%08X/%s]".format(terminationPoint.get.map(_.hashCode).getOrElse(0), direction)
+  override def connected(): Boolean = true
+  override def disconnect(): Boolean = throw new UnsupportedOperationException
+  override def toString = "UDPRemoteEndpoint[%08X/%s]".format(parent.get.map(_.hashCode).getOrElse(0), direction)
+  /** return signature with reverse direction, as original udp endpoint is */
+  override def signature(): String = Seq(nature.protocol, nature.address, priority.id, direction.reverse, options).mkString("'")
+  protected def send(message: Message, key: Option[Array[Byte]], remoteEndpoint: Endpoint[UDPRemoteEndpoint.Nature]): Boolean = false
+}
+
+object UDPRemoteEndpoint extends Endpoint.Factory with Loggable {
+  val protocol = "udp"
+
+  def fromSignature(hexapod: Hexapod, signature: String): Option[UDPRemoteEndpoint] = signature.split("'") match {
+    case Array(protocol, address, priority, Endpoint.Direction(direction), options @ _*) =>
+      val (ip, port) = address.split(":") match {
+        case Array(address, port @ _*) if address.nonEmpty =>
+          try {
+            (Some(InetAddress.getByName(address)), port.headOption.map(_.toInt))
+          } catch {
+            case e =>
+              log.error("incorrect endpoint address \"%s\" at signature %s".format(address, signature))
+              return None
+          }
+        case address =>
+          log.error("incorrect endpoint address \"%s\" at signature %s".format(address, signature))
+          return None
+      }
+      Some(new UDPRemoteEndpoint(new WeakReference(hexapod), direction.reverse, new Nature(ip, port)))
+    case _ =>
+      log.error("incorrect signature " + signature)
+      None
+  }
+
+  class Nature(val addr: Option[InetAddress] = None, val port: Option[Int] = None)
+    extends Endpoint.Nature {
+    val protocol = UDPRemoteEndpoint.protocol
+    override def address() = "%s:%s".format(addr.map(_.getHostAddress()).getOrElse(""), port.getOrElse(""))
+  }
 }

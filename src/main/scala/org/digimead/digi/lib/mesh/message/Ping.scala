@@ -20,15 +20,15 @@ package org.digimead.digi.lib.mesh.message
 
 import java.util.Date
 import java.util.UUID
-import java.util.concurrent.atomic.AtomicReference
 
-import scala.Option.option2Iterable
-
+import org.digimead.digi.lib.DependencyInjection
+import org.digimead.digi.lib.DependencyInjection.PersistentInjectable
 import org.digimead.digi.lib.log.Loggable
+import org.digimead.digi.lib.log.logger.RichLogger.rich2slf4j
 import org.digimead.digi.lib.mesh.Mesh
+import org.digimead.digi.lib.mesh.Mesh.mesh2implementation
 import org.digimead.digi.lib.mesh.communication.Communication
 import org.digimead.digi.lib.mesh.communication.Communication.communication2implementation
-import org.digimead.digi.lib.mesh.communication.Message
 import org.digimead.digi.lib.mesh.communication.Receptor
 import org.digimead.digi.lib.mesh.communication.Stimulus
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
@@ -53,13 +53,10 @@ case class Ping(override val sourceHexapod: UUID,
   override def toString = "Ping[%08X %s]".format(conversation.hashCode(), labelSuffix)
 }
 
-class PingBuilder extends Message.MessageBuilder with Loggable {
-  def buildMessage(from: Hexapod, to: Hexapod, conversation: UUID, timestamp: Long, word: String, distance: Byte, content: Array[Byte]): Option[Message] = {
+class PingFactory extends Ping.Interface {
+  def build(from: Hexapod, to: Hexapod, conversation: UUID, timestamp: Long, word: String,
+    distance: Byte, content: Array[Byte]): Option[Message] =
     Some(Ping(from.uuid, Some(to.uuid), conversation, timestamp)(false, distance))
-  }
-}
-
-class PingReceptor extends Receptor {
   def react(stimulus: Stimulus) = stimulus match {
     case Stimulus.IncomingMessage(message: Ping) =>
       Mesh(message.sourceHexapod) match {
@@ -78,26 +75,20 @@ class PingReceptor extends Receptor {
   }
 }
 
-object Ping extends Loggable {
+object Ping extends PersistentInjectable with Message.Factory with Loggable {
   val word = "ping"
-  private val initializationArgument = new AtomicReference[Option[Init]](None)
+  implicit def bindingModule = DependencyInjection()
+  @volatile private var implementation = injectIfBound[Interface] { new PingFactory }
 
-  def init(arg: Init): Unit = synchronized {
-    assert(!isInitialized, "Ping already initialized")
-    assert(Communication.isInitialized, "Communication not initialized")
-    log.debug("initialize Ping")
-    initializationArgument.set(Some(arg))
-    Message.add(word, arg.builder)
-    Communication.registerGlobal(arg.receptor)
-  }
-  def isInitialized(): Boolean = initializationArgument.get.nonEmpty
+  def build(from: Hexapod, to: Hexapod, conversation: UUID, timestamp: Long, word: String, distance: Byte,
+    content: Array[Byte]) = implementation.build(from, to, conversation, timestamp, word, distance, content)
+  def react(stimulus: Stimulus) = implementation.react(stimulus)
+  def commitInjection() {}
+  def updateInjection() { implementation = injectIfBound[Interface] { Ping.implementation } }
 
-  trait Init {
-    val builder: Message.MessageBuilder
-    val receptor: Receptor
-  }
-  class DefaultInit extends Init {
-    val builder: Message.MessageBuilder = new PingBuilder
-    val receptor: Receptor = new PingReceptor
+  trait Interface extends Loggable {
+    def build(from: Hexapod, to: Hexapod, conversation: UUID, timestamp: Long, word: String,
+      distance: Byte, content: Array[Byte]): Option[Message]
+    def react(stimulus: Stimulus): Option[Boolean]
   }
 }
