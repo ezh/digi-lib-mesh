@@ -31,9 +31,15 @@ import org.digimead.digi.lib.mesh.hexapod.Hexapod
 class UDPRemoteEndpoint(
   val parent: WeakReference[Hexapod],
   val direction: Endpoint.Direction,
-  val nature: UDPRemoteEndpoint.Nature) extends Endpoint[UDPRemoteEndpoint.Nature] {
-  assert(nature.addr.nonEmpty && nature.port.nonEmpty, "UDPRemoteEndpoint transportIdentifier incomlete: address %s / port %s".
-    format(nature.addr, nature.port))
+  val nature: UDPRemoteEndpoint.Nature,
+  override val initialPriority: Int = Endpoint.Priority.LOW.id)
+  extends Endpoint[UDPRemoteEndpoint.Nature] {
+  def this(direction: Endpoint.Direction, nature: UDPEndpoint.Nature, initialPriority: Int)(implicit parent: Hexapod) =
+    this(new WeakReference(parent), direction, nature, initialPriority)
+  def this(direction: Endpoint.Direction, nature: UDPEndpoint.Nature)(implicit parent: Hexapod) =
+    this(new WeakReference(parent), direction, nature, Endpoint.Priority.HIGH.id)
+  assert(nature.addr.nonEmpty && nature.port.nonEmpty,
+    "UDPRemoteEndpoint transportIdentifier incomlete: address %s / port %s".format(nature.addr, nature.port))
 
   def send(message: Message): Option[Endpoint.Nature] = throw new UnsupportedOperationException
   override def receive(message: Array[Byte]) = throw new UnsupportedOperationException
@@ -42,7 +48,7 @@ class UDPRemoteEndpoint(
   override def disconnect(): Boolean = throw new UnsupportedOperationException
   override def toString = "UDPRemoteEndpoint[%08X/%s]".format(parent.get.map(_.hashCode).getOrElse(0), direction)
   /** return signature with reverse direction, as original udp endpoint is */
-  override def signature(): String = Seq(nature.protocol, nature.address, priority.id, direction.reverse, options).mkString("'")
+  override def signature(): String = Seq(nature.protocol, nature.address, actualPriority, direction.reverse, options).mkString("'")
   protected def send(message: Message, key: Option[Array[Byte]], remoteEndpoint: Endpoint[UDPRemoteEndpoint.Nature]): Boolean = false
 }
 

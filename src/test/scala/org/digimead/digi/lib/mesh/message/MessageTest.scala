@@ -33,7 +33,8 @@ class MessageTest_j1 extends FunSuite with ShouldMatchers with TestHelperLogging
 
   override def withFixture(test: OneArgTest) {
     DependencyInjection.get.foreach(_ => DependencyInjection.clear)
-    DependencyInjection.set(org.digimead.digi.lib.mesh.default ~ defaultConfig(test.configMap), { Mesh })
+    DependencyInjection.set(org.digimead.digi.lib.mesh.defaultFakeHexapod ~ org.digimead.digi.lib.mesh.default ~
+      defaultConfig(test.configMap), { Mesh })
     withLogging(test.configMap) {
       test(test.configMap)
     }

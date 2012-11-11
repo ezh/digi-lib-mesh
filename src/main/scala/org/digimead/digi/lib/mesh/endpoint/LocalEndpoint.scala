@@ -37,10 +37,18 @@ import org.digimead.digi.lib.mesh.hexapod.Hexapod
 class LocalEndpoint(
   val parent: WeakReference[Hexapod],
   val direction: Endpoint.Direction,
-  val nature: LocalEndpoint.Nature = new LocalEndpoint.Nature(UUID.randomUUID))
+  val nature: LocalEndpoint.Nature,
+  override val initialPriority: Int)
   extends Endpoint[LocalEndpoint.Nature] {
+  def this(direction: Endpoint.Direction, nature: LocalEndpoint.Nature, initialPriority: Int)(implicit parent: Hexapod) =
+    this(new WeakReference(parent), direction, nature, initialPriority)
+  def this(direction: Endpoint.Direction, nature: LocalEndpoint.Nature)(implicit parent: Hexapod) =
+    this(new WeakReference(parent), direction, nature, Endpoint.Priority.HIGH.id)
+  def this(direction: Endpoint.Direction, initialPriority: Int)(implicit parent: Hexapod) =
+    this(new WeakReference(parent), direction, new LocalEndpoint.Nature(UUID.randomUUID), Endpoint.Priority.HIGH.id)
+  def this(direction: Endpoint.Direction)(implicit parent: Hexapod) =
+    this(new WeakReference(parent), direction, new LocalEndpoint.Nature(UUID.randomUUID), Endpoint.Priority.HIGH.id)
   @volatile var destination: Option[LocalEndpoint] = None
-  priority = Endpoint.Priority.HIGH
   log.debug("%s %s".format(this, nature.address))
 
   def connect(): Boolean = {
@@ -110,7 +118,7 @@ class LocalEndpoint(
       case None =>
         this.destination.flatMap(_.parent.get)
     }
-  override def toString = "LoopbackEndpoint[%08X/%s]".format(parent.get.map(_.hashCode).getOrElse(0), direction)
+  override def toString = "LoopbackEndpoint[%08X/%08X/%s]".format(parent.get.map(_.hashCode).getOrElse(0), nature.addr.hashCode(), direction)
 }
 
 object LocalEndpoint extends Endpoint.Factory with Loggable {
@@ -118,8 +126,14 @@ object LocalEndpoint extends Endpoint.Factory with Loggable {
   private val localEndpoints = new HashMap[UUID, LocalEndpoint] with SynchronizedMap[UUID, LocalEndpoint]
 
   def fromSignature(hexapod: Hexapod, signature: String): Option[LocalEndpoint] = signature.split("'") match {
-    case Array(protocol, address, priority, Endpoint.Direction(direction), options @ _*) =>
-      Some(new LocalEndpoint(new WeakReference(hexapod), direction.reverse, new Nature(UUID.fromString(address))))
+    case Array(protocol, address, actualPriority, Endpoint.Direction(direction), options @ _*) =>
+      try {
+        Some(new LocalEndpoint(new WeakReference(hexapod), direction.reverse, new Nature(UUID.fromString(address)), actualPriority.toInt))
+      } catch {
+        case e =>
+          log.error(e.getMessage(), e)
+          None
+      }
     case _ =>
       log.error("incorrect signature " + signature)
       None

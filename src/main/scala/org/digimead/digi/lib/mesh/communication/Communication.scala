@@ -37,8 +37,8 @@ import org.digimead.digi.lib.mesh.hexapod.Hexapod
 import org.digimead.digi.lib.mesh.hexapod.Hexapod.hexapod2app
 import org.digimead.digi.lib.mesh.message.Acknowledgement
 import org.digimead.digi.lib.mesh.message.Message
-import org.scala_tools.subcut.inject.BindingModule
-import org.scala_tools.subcut.inject.Injectable
+import com.escalatesoft.subcut.inject.BindingModule
+import com.escalatesoft.subcut.inject.Injectable
 
 class Communication(implicit val bindingModule: BindingModule) extends Injectable with Communication.Interface {
   val deliverMax = injectIfBound[Int]("Mesh.Communication.DeliverMax") { 3 }

@@ -25,16 +25,18 @@ import org.digimead.digi.lib.aop.log
 import org.digimead.digi.lib.mesh.Mesh
 import org.digimead.digi.lib.mesh.Mesh.mesh2implementation
 import org.digimead.lib.test.TestHelperLogging
-import org.scala_tools.subcut.inject.NewBindingModule
 import org.scalatest.fixture.FunSuite
 import org.scalatest.matchers.ShouldMatchers
+
+import com.escalatesoft.subcut.inject.NewBindingModule
 
 class AppHexapodTest_j1 extends FunSuite with ShouldMatchers with TestHelperLogging {
   type FixtureParam = Map[String, Any]
 
   override def withFixture(test: OneArgTest) {
     DependencyInjection.get.foreach(_ => DependencyInjection.clear)
-    DependencyInjection.set(org.digimead.digi.lib.mesh.default ~ defaultConfig(test.configMap), { Mesh })
+    DependencyInjection.set(org.digimead.digi.lib.mesh.defaultFakeHexapod ~
+      org.digimead.digi.lib.mesh.default ~ defaultConfig(test.configMap), { Mesh })
     withLogging(test.configMap) {
       test(test.configMap)
     }
@@ -55,7 +57,7 @@ class AppHexapodTest_j1 extends FunSuite with ShouldMatchers with TestHelperLogg
       val uuid = UUID.randomUUID()
       val local = new AppHexapod(uuid)
       val custom = new NewBindingModule(module => {
-        module.bind[Hexapod.AppHexapod] toSingle { local }
+        module.bind[AppHexapod] toSingle { local }
       })
       resetConfig(custom)
       Hexapod

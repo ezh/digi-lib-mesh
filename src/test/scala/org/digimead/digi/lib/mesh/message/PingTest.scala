@@ -42,7 +42,8 @@ class PingTest_j1 extends FunSuite with ShouldMatchers with TestHelperLogging {
 
   override def withFixture(test: OneArgTest) {
     DependencyInjection.get.foreach(_ => DependencyInjection.clear)
-    DependencyInjection.set(org.digimead.digi.lib.mesh.default ~ defaultConfig(test.configMap), { Mesh })
+    DependencyInjection.set(org.digimead.digi.lib.mesh.defaultFakeHexapod ~ org.digimead.digi.lib.mesh.default ~
+      defaultConfig(test.configMap), { Mesh })
     Mesh
     withLogging(test.configMap) {
       test(test.configMap)
@@ -53,7 +54,6 @@ class PingTest_j1 extends FunSuite with ShouldMatchers with TestHelperLogging {
     conf =>
       val sourceHexapod = Hexapod(UUID.randomUUID())
       val destinationHexapod = Hexapod(UUID.randomUUID())
-      val transportEndpoint = new LocalEndpoint(new WeakReference(null), Endpoint.Direction.InOut)
       val pingA = Ping(sourceHexapod.uuid, Some(destinationHexapod.uuid))(true)
       val rawMessage = pingA.createRawMessage(sourceHexapod, destinationHexapod, None)
       rawMessage.length should be > (0)
@@ -77,7 +77,6 @@ class PingTest_j1 extends FunSuite with ShouldMatchers with TestHelperLogging {
     conf =>
       val dhPeer = new DiffieHellmanEnc(5, DiffieHellmanEnc.randomPrime(128))
       val sourceHexapod = Hexapod(UUID.randomUUID())
-      val transportEndpoint = new LocalEndpoint(new WeakReference(null), Endpoint.Direction.InOut)
       val pingA = Ping(sourceHexapod.uuid, Some(Hexapod.uuid))(true)
       pingA.distance should be(0)
       val sharedKey = Hexapod.getDiffieHellman.get.getSharedKey(dhPeer.publicKey)

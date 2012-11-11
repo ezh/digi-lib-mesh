@@ -20,27 +20,32 @@ package org.digimead.digi.lib.mesh
 
 import java.net.InetAddress
 import java.util.UUID
+
 import scala.collection.mutable.SynchronizedQueue
 import scala.ref.WeakReference
+
 import org.digimead.digi.lib.DependencyInjection
+import org.digimead.digi.lib.aop.log
+import org.digimead.digi.lib.mesh.Peer.peer2implementation
 import org.digimead.digi.lib.mesh.communication.Communication
 import org.digimead.digi.lib.mesh.communication.Communication.communication2implementation
 import org.digimead.digi.lib.mesh.endpoint.Endpoint
 import org.digimead.digi.lib.mesh.endpoint.UDPEndpoint
+import org.digimead.digi.lib.mesh.endpoint.UDPRemoteEndpoint
 import org.digimead.digi.lib.mesh.hexapod.AppHexapod
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
 import org.digimead.digi.lib.mesh.hexapod.Hexapod.hexapod2app
+import org.digimead.digi.lib.mesh.message.DiffieHellman
 import org.digimead.digi.lib.mesh.message.Ping
 import org.digimead.lib.test.EventPublisher
 import org.digimead.lib.test.TestHelperLogging
 import org.digimead.lib.test.TestHelperMatchers
-import org.scala_tools.subcut.inject.BindingModule
-import org.scala_tools.subcut.inject.NewBindingModule
 import org.scalatest.BeforeAndAfter
 import org.scalatest.fixture.FunSuite
 import org.scalatest.matchers.ShouldMatchers
-import org.digimead.digi.lib.mesh.message.DiffieHellman
-import org.digimead.digi.lib.mesh.endpoint.UDPRemoteEndpoint
+
+import com.escalatesoft.subcut.inject.BindingModule
+import com.escalatesoft.subcut.inject.NewBindingModule
 
 class MeshTest_j1 extends FunSuite with ShouldMatchers with BeforeAndAfter with TestHelperLogging with TestHelperMatchers {
   type FixtureParam = Map[String, Any]
@@ -58,8 +63,8 @@ class MeshTest_j1 extends FunSuite with ShouldMatchers with BeforeAndAfter with 
 
       // init
       val config = new NewBindingModule(module => {
-        module.bind[Hexapod.AppHexapod] toSingle { new AppHexapod(Common.node1UUID) }
-        lazy val communicationSingleton = DependencyInjection.makeSingleton(implicit module => new MyCommunication, true)
+        module.bind[AppHexapod] toSingle { new AppHexapod(Common.node1UUID) }
+        lazy val communicationSingleton = DependencyInjection.makeInitOnce(implicit module => new MyCommunication)
         module.bind[Communication.Interface] toModuleSingle { communicationSingleton(_) }
         module.bind[Long] identifiedBy ("Mesh.Communication.DeliverTTL") toSingle { 1000L }
       }) ~ org.digimead.digi.lib.mesh.default ~ defaultConfig(configMap)
@@ -119,7 +124,7 @@ class MeshTest_j1 extends FunSuite with ShouldMatchers with BeforeAndAfter with 
       log.___glance("ADD REMOTE PEER")
       val remote = Hexapod(Common.node2UUID)
       val remoteEndpointIn = new UDPRemoteEndpoint(new WeakReference(remote), Endpoint.Direction.In,
-          new UDPEndpoint.Nature(Some(InetAddress.getLocalHost()), Some(23457)))
+        new UDPEndpoint.Nature(Some(InetAddress.getLocalHost()), Some(23457)))
       Peer.add(remote)
 
       expectDefined(events.dequeue) { case Communication.Event.Add(msg: DiffieHellman) => }

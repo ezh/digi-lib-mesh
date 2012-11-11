@@ -18,18 +18,20 @@
 
 package org.digimead.digi.lib.mesh
 
+import java.util.UUID
+
+import org.digimead.digi.lib.DependencyInjection
+import org.digimead.digi.lib.mesh.Mesh.mesh2implementation
+import org.digimead.digi.lib.mesh.Peer.peer2implementation
+import org.digimead.digi.lib.mesh.hexapod.Hexapod
+import org.digimead.lib.test.TestHelperLogging
+import org.digimead.lib.test.TestHelperMatchers
+import org.scalatest.PrivateMethodTester
 import org.scalatest.fixture.FunSpec
 import org.scalatest.matchers.ShouldMatchers
-import org.scalatest.BeforeAndAfter
-import org.digimead.lib.test.TestHelperLogging
-import org.scalatest.PrivateMethodTester
-import org.digimead.digi.lib.DependencyInjection
-import org.scala_tools.subcut.inject.NewBindingModule
-import org.scala_tools.subcut.inject.BindingModule
-import org.scala_tools.subcut.inject.LazyModuleInstanceProvider
-import org.digimead.digi.lib.mesh.hexapod.Hexapod
-import java.util.UUID
-import org.digimead.lib.test.TestHelperMatchers
+
+import com.escalatesoft.subcut.inject.BindingModule
+import com.escalatesoft.subcut.inject.NewBindingModule
 
 class PeerSpec_j1 extends FunSpec with ShouldMatchers with TestHelperLogging with PrivateMethodTester with TestHelperMatchers {
   type FixtureParam = Map[String, Any]
@@ -37,10 +39,11 @@ class PeerSpec_j1 extends FunSpec with ShouldMatchers with TestHelperLogging wit
   override def withFixture(test: OneArgTest) {
     DependencyInjection.get.foreach(_ => DependencyInjection.clear)
     val custom = new NewBindingModule(module => {
-      lazy val peerSingleton = DependencyInjection.makeSingleton(implicit module => new MyPeer, true)
+      lazy val peerSingleton = DependencyInjection.makeInitOnce(implicit module => new MyPeer)
       module.bind[Peer.Interface] toModuleSingle { peerSingleton(_) }
     })
-    DependencyInjection.set(custom ~ org.digimead.digi.lib.mesh.default ~ defaultConfig(test.configMap), { Mesh })
+    DependencyInjection.set(custom ~ org.digimead.digi.lib.mesh.defaultFakeHexapod ~
+      org.digimead.digi.lib.mesh.default ~ defaultConfig(test.configMap), { Mesh })
     withLogging(test.configMap) {
       test(test.configMap)
     }
@@ -66,7 +69,7 @@ class PeerSpec_j1 extends FunSpec with ShouldMatchers with TestHelperLogging wit
         val pool = Peer.inner.asInstanceOf[MyPeer].getPool
         val hexapod = Hexapod(UUID.randomUUID())
         pool should be('empty)
-        Mesh(hexapod.uuid) should not be('empty)
+        Mesh(hexapod.uuid) should not be ('empty)
         Peer.add(hexapod) should be(true)
         Mesh(hexapod.uuid) should be(Some(hexapod))
         pool should contain(hexapod)

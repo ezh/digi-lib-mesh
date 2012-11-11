@@ -39,7 +39,13 @@ import org.digimead.digi.lib.aop.log
 class UDPEndpoint(
   val parent: WeakReference[Hexapod],
   val direction: Endpoint.Direction,
-  val nature: UDPEndpoint.Nature) extends Endpoint[UDPEndpoint.Nature] {
+  val nature: UDPEndpoint.Nature,
+  override val initialPriority: Int = Endpoint.Priority.LOW.id)
+  extends Endpoint[UDPEndpoint.Nature] {
+  def this(direction: Endpoint.Direction, nature: UDPEndpoint.Nature, initialPriority: Int)(implicit parent: Hexapod) =
+    this(new WeakReference(parent), direction, nature, initialPriority)
+  def this(direction: Endpoint.Direction, nature: UDPEndpoint.Nature)(implicit parent: Hexapod) =
+    this(new WeakReference(parent), direction, nature, Endpoint.Priority.HIGH.id)
   val protocol = "udp"
   log.debug("%s %s".format(this, nature))
   /** listen interface address, port */

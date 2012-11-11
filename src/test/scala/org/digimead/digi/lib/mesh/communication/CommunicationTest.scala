@@ -19,31 +19,29 @@
 package org.digimead.digi.lib.mesh.communication
 
 import java.util.UUID
+
 import scala.collection.mutable.SynchronizedQueue
-import org.digimead.digi.lib.log.Loggable
-import org.digimead.digi.lib.log.Record
+
+import org.digimead.digi.lib.DependencyInjection
 import org.digimead.digi.lib.log.logger.RichLogger.rich2slf4j
 import org.digimead.digi.lib.mesh.Mesh
-import org.digimead.digi.lib.mesh.Peer
 import org.digimead.digi.lib.mesh.communication.Communication.communication2implementation
 import org.digimead.digi.lib.mesh.hexapod.AppHexapod
-import org.digimead.digi.lib.mesh.hexapod.Hexapod
-import org.digimead.digi.lib.mesh.message.DiffieHellman
 import org.digimead.digi.lib.mesh.message.Ping
 import org.digimead.lib.test.TestHelperLogging
-import org.scalatest.BeforeAndAfter
 import org.scalatest.fixture.FunSuite
 import org.scalatest.matchers.ShouldMatchers
-import org.digimead.digi.lib.DependencyInjection
-import org.scala_tools.subcut.inject.NewBindingModule
-import org.scala_tools.subcut.inject.BindingModule
+
+import com.escalatesoft.subcut.inject.BindingModule
+import com.escalatesoft.subcut.inject.NewBindingModule
 
 class CommunicationTest_j1 extends FunSuite with ShouldMatchers with TestHelperLogging {
   type FixtureParam = Map[String, Any]
 
   override def withFixture(test: OneArgTest) {
     DependencyInjection.get.foreach(_ => DependencyInjection.clear)
-    DependencyInjection.set(org.digimead.digi.lib.mesh.default ~ defaultConfig(test.configMap), { Mesh })
+    DependencyInjection.set(org.digimead.digi.lib.mesh.defaultFakeHexapod ~
+      org.digimead.digi.lib.mesh.default ~ defaultConfig(test.configMap), { Mesh })
     withLogging(test.configMap) {
       test(test.configMap)
     }
@@ -54,8 +52,8 @@ class CommunicationTest_j1 extends FunSuite with ShouldMatchers with TestHelperL
   test("communication test") {
     conf =>
       val custom = new NewBindingModule(module => {
-        module.bind[Hexapod.AppHexapod] toSingle { new AppHexapod(UUID.randomUUID()) }
-        lazy val communicationSingleton = DependencyInjection.makeSingleton(implicit module => new MyCommunication, true)
+        module.bind[AppHexapod] toSingle { new AppHexapod(UUID.randomUUID()) }
+        lazy val communicationSingleton = DependencyInjection.makeInitOnce(implicit module => new MyCommunication)
         module.bind[Communication.Interface] toModuleSingle { communicationSingleton(_) }
         module.bind[Long] identifiedBy ("Mesh.Communication.DeliverTTL") toSingle { 1000L }
       })

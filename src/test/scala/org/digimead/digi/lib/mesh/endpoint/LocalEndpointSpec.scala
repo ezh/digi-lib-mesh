@@ -25,16 +25,17 @@ import scala.ref.WeakReference
 import org.digimead.digi.lib.DependencyInjection
 import org.digimead.digi.lib.mesh.Mesh
 import org.digimead.lib.test.TestHelperLogging
-import org.scala_tools.subcut.inject.NewBindingModule
 import org.scalatest.fixture.FunSpec
 import org.scalatest.matchers.ShouldMatchers
+
+import com.escalatesoft.subcut.inject.NewBindingModule
 
 class LocalEndpointSpec_j1 extends FunSpec with ShouldMatchers with TestHelperLogging {
   type FixtureParam = Map[String, Any]
 
   override def withFixture(test: OneArgTest) {
     DependencyInjection.get.foreach(_ => DependencyInjection.clear)
-    DependencyInjection.set(org.digimead.digi.lib.mesh.default ~ defaultConfig(test.configMap), { Mesh })
+    DependencyInjection.set(org.digimead.digi.lib.mesh.defaultFakeHexapod ~ org.digimead.digi.lib.mesh.default ~ defaultConfig(test.configMap), { Mesh })
     withLogging(test.configMap) {
       test(test.configMap)
     }
@@ -46,10 +47,11 @@ class LocalEndpointSpec_j1 extends FunSpec with ShouldMatchers with TestHelperLo
     it("should have (de)serialization via signature") {
       config =>
         val epaddr = UUID.randomUUID()
-        val ep = new LocalEndpoint(new WeakReference(null), Endpoint.Direction.InOut, new LocalEndpoint.Nature(epaddr))
+        val ep = new LocalEndpoint(new WeakReference(null), Endpoint.Direction.InOut, new LocalEndpoint.Nature(epaddr), -1)
         ep.nature.address should be(epaddr.toString())
         ep.nature.toString should be("local://" + epaddr.toString())
-        ep.signature should be("local'" + epaddr.toString() + "'30'InOut'")
+        ep.signature should be("local'" + epaddr.toString() + "'-1'InOut'")
+        ep.actualPriority should be(-1)
         val serialized = ep.signature
         val epCopy = Endpoint.fromSignature(null, serialized)
         epCopy.get.nature.toString should be(ep.nature.toString)

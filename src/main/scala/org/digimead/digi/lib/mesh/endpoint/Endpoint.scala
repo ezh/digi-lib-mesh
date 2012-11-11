@@ -19,6 +19,7 @@
 package org.digimead.digi.lib.mesh.endpoint
 
 import scala.collection.mutable.Publisher
+import scala.collection.mutable.Subscriber
 import scala.collection.mutable.SynchronizedMap
 import scala.collection.mutable.WeakHashMap
 import scala.ref.WeakReference
@@ -29,8 +30,8 @@ import org.digimead.digi.lib.aop.log
 import org.digimead.digi.lib.enc.Simple
 import org.digimead.digi.lib.log.Loggable
 import org.digimead.digi.lib.log.logger.RichLogger.rich2slf4j
-import org.digimead.digi.lib.mesh.message.Message
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
+import org.digimead.digi.lib.mesh.message.Message
 
 /**
  * unique source/destination
@@ -44,15 +45,19 @@ trait Endpoint[T <: Endpoint.Nature] extends Publisher[Endpoint.Event] with Logg
   val nature: T
   /** endpoint options (optional parameters, that passed to signature) */
   val options: String = ""
-  /** endpoint priority */
-  @volatile var priority = Endpoint.Priority.LOW
-  /** last communication timestamp */
-  @volatile var lastActivity = System.currentTimeMillis
+  /** endpoint initial priority */
+  val initialPriority: Int = Endpoint.Priority.LOW.id
+  /**
+   * endpoint actual priority
+   * decrement on failure
+   * restore on success
+   * on every modification publish Event.PriorityShift
+   */
+  @volatile var actualPriority: Int = initialPriority
   /** is endpoint connected/available */
   @volatile protected var connectionActive = false
   /** session keys between this endpoint and destination */
   protected val peerSessionKey = new WeakHashMap[Hexapod, Endpoint.SessionKey] with SynchronizedMap[Hexapod, Endpoint.SessionKey]
-  parent.get.foreach(_.registerEndpoint(this))
 
   /**
    * connect endpoint to mesh
@@ -91,7 +96,7 @@ trait Endpoint[T <: Endpoint.Nature] extends Publisher[Endpoint.Event] with Logg
    * protocol'address'priority'options
    * ' is separator
    */
-  def signature(): String = Seq(nature.protocol, nature.address, priority.id, direction, options).mkString("'")
+  def signature(): String = Seq(nature.protocol, nature.address, actualPriority, direction, options).mkString("'")
   /**
    * tests against other endpoint
    */
@@ -133,6 +138,8 @@ trait Endpoint[T <: Endpoint.Nature] extends Publisher[Endpoint.Event] with Logg
           peerSessionKey.remove(key)
     }
   }
+  override def equals(that: Any): Boolean =
+    that.getClass() == this.getClass() && (this.hashCode() == that.hashCode())
   override protected def publish(event: Endpoint.Event) = try {
     super.publish(event)
   } catch {
@@ -143,6 +150,8 @@ trait Endpoint[T <: Endpoint.Nature] extends Publisher[Endpoint.Event] with Logg
 
 object Endpoint extends PersistentInjectable {
   assert(org.digimead.digi.lib.mesh.isReady, "Mesh not ready, please build it first")
+  type Pub = Publisher[Event]
+  type Sub = Subscriber[Event, Pub]
   implicit def bindingModule = DependencyInjection()
   @volatile private var factory = inject[Seq[Factory]] map (factory => factory.protocol -> factory) toMap
   @volatile private var maxKeyLifeTime = injectOptional[Long]("Mesh.Endpoint.MaxKeyLifeTime") getOrElse 60000L
@@ -154,6 +163,7 @@ object Endpoint extends PersistentInjectable {
   def updateInjection() { factory = inject[Seq[Factory]] map (factory => factory.protocol -> factory) toMap }
 
   object Priority extends Enumeration {
+    val NONE = Value(0, "NONE")
     val LOW = Value(10, "LOW")
     val MEDUIM = Value(20, "MEDIUM")
     val HIGH = Value(30, "HIGH")
@@ -185,6 +195,8 @@ object Endpoint extends PersistentInjectable {
     /** return address of endpoint as string */
     def address(): String = throw new UnsupportedOperationException
     override def toString(): String = protocol + "://" + address()
+    override def equals(that: Any): Boolean =
+      that.isInstanceOf[Nature] && (this.address == that.asInstanceOf[Nature].address)
   }
   // direction
   sealed trait Direction {
@@ -216,6 +228,7 @@ object Endpoint extends PersistentInjectable {
   sealed trait Event
   object Event {
     case class Connect(endpoint: Endpoint[_ <: Endpoint.Nature]) extends Event
+    case class PriorityShift(endpoint: Endpoint[_ <: Endpoint.Nature]) extends Event
     case class Disconnect(endpoint: Endpoint[_ <: Endpoint.Nature]) extends Event
   }
 }

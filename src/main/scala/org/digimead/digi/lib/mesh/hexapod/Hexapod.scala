@@ -35,32 +35,24 @@ import org.digimead.digi.lib.log.Loggable
 import org.digimead.digi.lib.log.logger.RichLogger.rich2slf4j
 import org.digimead.digi.lib.mesh.Mesh
 import org.digimead.digi.lib.mesh.Mesh.mesh2implementation
-import org.digimead.digi.lib.mesh.Peer
 import org.digimead.digi.lib.mesh.endpoint.Endpoint
 import org.digimead.digi.lib.mesh.message.Message
 
-class Hexapod private (val uuid: UUID) extends Hexapod.Pub with Loggable {
-  /** Hexapod endpoints */
+class Hexapod private[hexapod] (val uuid: UUID) extends Hexapod.Pub with Loggable {
+  /** Hexapod endpoints, head/best, last/worst */
   @volatile protected var endpoint = Seq[Endpoint[_ <: Endpoint.Nature]]()
   @volatile protected var authDiffieHellman: Option[DiffieHellman] = None
   protected val peerSessionKey = new WeakHashMap[Hexapod, (BigInt, Array[Byte])] with SynchronizedMap[Hexapod, (BigInt, Array[Byte])]
+  protected val endpointSubscriber = new Endpoint.Sub {
+    def notify(pub: Endpoint.Pub, event: Endpoint.Event) = rearrangeEndpoints
+  }
   log.debug("alive %s %s".format(this, uuid))
   Mesh.register(this)
 
-  def registerEndpoint(endpoint: Endpoint[_ <: Endpoint.Nature]) {
-    log.debug("register %s endpoint at %s".format(endpoint, this))
-    this.endpoint = this.endpoint :+ endpoint
-  }
-  def getEndpoints(): Seq[Endpoint[_ <: Endpoint.Nature]] = endpoint
   @log
   def getDiffieHellman() = authDiffieHellman
   @log
-  def setDiffieHellman(g: Int, p: BigInt, publicKey: BigInt, secretKey: BigInt = 0): DiffieHellman = {
-    val dh = new DiffieHellman(g, p, secretKey, publicKey)
-    authDiffieHellman = Some(dh)
-    publish(Hexapod.Event.SetDiffieHellman(this))
-    dh
-  }
+  def getEndpoints(): Seq[Endpoint[_ <: Endpoint.Nature]] = endpoint
   @log
   def getKeyForHexapod(peerHexapod: Hexapod): Option[(BigInt, Array[Byte])] = {
     log.debug("search key %s <-> %s ".format(this, peerHexapod))
@@ -78,16 +70,29 @@ class Hexapod private (val uuid: UUID) extends Hexapod.Pub with Loggable {
         }
     }
   }
-  def getLinks(hexapod: Hexapod, filterConnected: Boolean = true): Seq[Hexapod.Link] = {
-    if (hexapod == this) {
-      Seq()
-    } else {
-      endpoint.filter(_.connected || !filterConnected).map(lEndpoint => Hexapod.Link(lEndpoint, Seq()))
-    }
+  @log
+  def addEndpoint[T <: Endpoint[_ <: Endpoint.Nature]](endpoint: T): T = {
+    log.debug("register %s endpoint at %s".format(endpoint, this))
+    this.endpoint = this.endpoint :+ endpoint
+    endpoint.subscribe(endpointSubscriber)
+    endpoint
   }
-  /*.exists(lEndpoint =>
-      hexapod.getEndpoints.filter(ep => directionFilter.map(_.reverse).exists(_ == ep.direction)).
-        exists(rEndpoint => lEndpoint.suitable(rEndpoint)))*/
+  @log
+  def addEndpoint[T <: Endpoint[_ <: Endpoint.Nature]](f: Hexapod => T): T = addEndpoint(f(this))
+  @log
+  def delEndpoint[T <: Endpoint[_ <: Endpoint.Nature]](endpoint: T): T = {
+    log.debug("register %s endpoint at %s".format(endpoint, this))
+    endpoint.removeSubscription(endpointSubscriber)
+    this.endpoint = this.endpoint.filterNot(_ == endpoint)
+    endpoint
+  }
+  @log
+  def setDiffieHellman(g: Int, p: BigInt, publicKey: BigInt, secretKey: BigInt = 0): DiffieHellman = {
+    val dh = new DiffieHellman(g, p, secretKey, publicKey)
+    authDiffieHellman = Some(dh)
+    publish(Hexapod.Event.SetDiffieHellman(this))
+    dh
+  }
   override def equals(that: Any): Boolean =
     that.isInstanceOf[Hexapod] && (this.hashCode() == that.asInstanceOf[Hexapod].hashCode())
   override protected def publish(event: Hexapod.Event) = try {
@@ -96,6 +101,9 @@ class Hexapod private (val uuid: UUID) extends Hexapod.Pub with Loggable {
     case e =>
       log.error(e.getMessage(), e)
   }
+  @log
+  def rearrangeEndpoints() =
+    endpoint = endpoint.sortBy(-_.actualPriority).sortBy(!_.connected)
   override def toString = "Hexapod[%08X]".format(uuid.hashCode())
 }
 
@@ -116,14 +124,6 @@ object Hexapod extends PersistentInjectable with Loggable {
     None
   }
 
-  case class Link(localEndpoint: Endpoint[_ <: Endpoint.Nature], remoteEndpoints: Seq[Endpoint[_ <: Endpoint.Nature]])
-  abstract class AppHexapod(override val uuid: UUID) extends Hexapod(uuid) with Loggable {
-    def connect(): Boolean
-    def disconnect(): Boolean
-    def receive(message: Message)
-    def reconnect(): Boolean
-    def connected(): Boolean
-  }
   sealed trait Event
   object Event {
     case class Connect(val endpoint: Endpoint[_ <: Endpoint.Nature]) extends Event

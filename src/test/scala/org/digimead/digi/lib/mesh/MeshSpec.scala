@@ -1,19 +1,38 @@
+/**
+ * Digi-Lib-Mesh - distributed mesh library for Digi components
+ *
+ * Copyright (c) 2012 Alexey Aksenov ezh@ezh.msk.ru
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.digimead.digi.lib.mesh
 
+import java.util.UUID
+
+import scala.ref.WeakReference
+
+import org.digimead.digi.lib.DependencyInjection
+import org.digimead.digi.lib.mesh.Mesh.mesh2implementation
+import org.digimead.digi.lib.mesh.hexapod.Hexapod
+import org.digimead.lib.test.TestHelperLogging
+import org.digimead.lib.test.TestHelperMatchers
+import org.scalatest.PrivateMethodTester
 import org.scalatest.fixture.FunSpec
 import org.scalatest.matchers.ShouldMatchers
-import org.digimead.lib.test.TestHelperLogging
-import org.digimead.digi.lib.DependencyInjection
-import org.digimead.digi.lib.mesh.hexapod.Hexapod
-import java.util.UUID
-import org.scalatest.PrivateMethodTester
-import scala.collection.mutable.HashMap
-import scala.ref.WeakReference
-import org.scala_tools.subcut.inject.BindingModule
-import org.scala_tools.subcut.inject.NewBindingModule
-import java.util.concurrent.atomic.AtomicInteger
-import org.scalatest.BeforeAndAfter
-import org.digimead.lib.test.TestHelperMatchers
+
+import com.escalatesoft.subcut.inject.BindingModule
+import com.escalatesoft.subcut.inject.NewBindingModule
 
 class MeshSpec_j1 extends FunSpec with ShouldMatchers with TestHelperLogging with PrivateMethodTester with TestHelperMatchers {
   type FixtureParam = Map[String, Any]
@@ -23,7 +42,8 @@ class MeshSpec_j1 extends FunSpec with ShouldMatchers with TestHelperLogging wit
     val custom = new NewBindingModule(module => {
       module.bind[Mesh.Interface] toModuleSingle { implicit module => new MyMesh }
     })
-    DependencyInjection.set(custom ~ org.digimead.digi.lib.mesh.default ~ defaultConfig(test.configMap), { Mesh })
+    DependencyInjection.set(custom ~ org.digimead.digi.lib.mesh.defaultFakeHexapod ~
+      org.digimead.digi.lib.mesh.default ~ defaultConfig(test.configMap), { Mesh })
     withLogging(test.configMap) {
       test(test.configMap)
     }
@@ -53,7 +73,7 @@ class MeshSpec_j1 extends FunSpec with ShouldMatchers with TestHelperLogging wit
         val gcCounter = Mesh.inner.asInstanceOf[MyMesh].getGCCounter
         log.___glance("start tests " + Mesh().mkString(","))
         gcCounter.get should equal(gcLimit)
-        entity should be ('empty)
+        entity should be('empty)
         log.___glance("stop tests " + Mesh().mkString(","))
 
         val hexapod = Hexapod(UUID.randomUUID())
@@ -63,7 +83,7 @@ class MeshSpec_j1 extends FunSpec with ShouldMatchers with TestHelperLogging wit
 
         Mesh.unregister(hexapod) should be(true)
         gcCounter.get should be(gcLimit - 1)
-        entity should be ('empty)
+        entity should be('empty)
         Mesh.unregister(hexapod) should be(false)
 
         Mesh.register(hexapod)

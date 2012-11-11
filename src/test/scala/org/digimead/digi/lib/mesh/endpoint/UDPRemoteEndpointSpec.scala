@@ -25,16 +25,17 @@ import scala.ref.WeakReference
 import org.digimead.digi.lib.DependencyInjection
 import org.digimead.digi.lib.mesh.Mesh
 import org.digimead.lib.test.TestHelperLogging
-import org.scala_tools.subcut.inject.NewBindingModule
 import org.scalatest.fixture.FunSpec
 import org.scalatest.matchers.ShouldMatchers
+
+import com.escalatesoft.subcut.inject.NewBindingModule
 
 class UDPRemoteEndpointSpec_j1 extends FunSpec with ShouldMatchers with TestHelperLogging {
   type FixtureParam = Map[String, Any]
 
   override def withFixture(test: OneArgTest) {
     DependencyInjection.get.foreach(_ => DependencyInjection.clear)
-    DependencyInjection.set(org.digimead.digi.lib.mesh.default ~ defaultConfig(test.configMap), { Mesh })
+    DependencyInjection.set(org.digimead.digi.lib.mesh.defaultFakeHexapod ~ org.digimead.digi.lib.mesh.default ~ defaultConfig(test.configMap), { Mesh })
     withLogging(test.configMap) {
       test(test.configMap)
     }

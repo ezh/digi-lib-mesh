@@ -18,9 +18,7 @@
 
 package org.digimead.digi.lib.mesh.endpoint
 
-import java.net.InetAddress
-
-import scala.ref.WeakReference
+import java.util.UUID
 
 import org.digimead.digi.lib.DependencyInjection
 import org.digimead.digi.lib.mesh.Mesh
@@ -30,7 +28,7 @@ import org.scalatest.matchers.ShouldMatchers
 
 import com.escalatesoft.subcut.inject.NewBindingModule
 
-class UDPEndpointSpec_j1 extends FunSpec with ShouldMatchers with TestHelperLogging {
+class EndpointSpec_j1 extends FunSpec with ShouldMatchers with TestHelperLogging {
   type FixtureParam = Map[String, Any]
 
   override def withFixture(test: OneArgTest) {
@@ -43,19 +41,14 @@ class UDPEndpointSpec_j1 extends FunSpec with ShouldMatchers with TestHelperLogg
 
   def resetConfig(newConfig: NewBindingModule = new NewBindingModule(module => {})) = DependencyInjection.reset(newConfig ~ DependencyInjection())
 
-  describe("A UDPEndpointSpec") {
-    it("should have (de)serialization via signature") {
+  describe("An Endpoint") {
+    it("should should proper comparison of nature based on address") {
       config =>
-        val ep = new UDPEndpoint(new WeakReference(null), Endpoint.Direction.In,
-          new UDPEndpoint.Nature(Some(InetAddress.getLocalHost()), Some(12345)))
-        ep.nature.address should be("127.0.0.1:12345")
-        ep.nature.toString should be("udp://127.0.0.1:12345")
-        ep.signature should be("udp'127.0.0.1:12345'10'In'")
-        val serialized = ep.signature
-        val epCopy = Endpoint.fromSignature(null, serialized)
-        epCopy.get.nature.toString should be(ep.nature.toString)
-        epCopy.get.signature.toString should be(ep.signature.toString)
-        epCopy.get.getClass() should be(classOf[UDPRemoteEndpoint])
+        val ep1 = new LocalEndpoint.Nature(UUID.fromString("00000000-0000-0000-0000-000000000000"))
+        val ep2 = new LocalEndpoint.Nature(UUID.randomUUID())
+        val ep3 = new LocalEndpoint.Nature(UUID.fromString("00000000-0000-0000-0000-000000000000"))
+        ep1 should not be (ep2)
+        ep1 should be(ep3)
     }
   }
 }

@@ -18,12 +18,12 @@
 
 package org.digimead.digi.lib.mesh
 
-import org.scala_tools.subcut.inject.NewBindingModule
+import com.escalatesoft.subcut.inject.NewBindingModule
 import org.digimead.digi.lib.DependencyInjection
 
 package object communication {
   lazy val default = new NewBindingModule(module => {
-    lazy val communicationSingleton = DependencyInjection.makeSingleton(implicit module => new Communication, true)
+    lazy val communicationSingleton = DependencyInjection.makeInitOnce(implicit module => new Communication)
     module.bind[Communication.Interface] toModuleSingle { communicationSingleton(_) }
   })
 }

@@ -38,7 +38,8 @@ class DiffieHellmanTest_j1 extends FunSuite with ShouldMatchers with TestHelperL
 
   override def withFixture(test: OneArgTest) {
     DependencyInjection.get.foreach(_ => DependencyInjection.clear)
-    DependencyInjection.set(org.digimead.digi.lib.mesh.default ~ defaultConfig(test.configMap), { Mesh })
+    DependencyInjection.set(org.digimead.digi.lib.mesh.defaultFakeHexapod ~ org.digimead.digi.lib.mesh.default ~
+      defaultConfig(test.configMap), { Mesh })
     withLogging(test.configMap) {
       test(test.configMap)
     }
@@ -48,7 +49,6 @@ class DiffieHellmanTest_j1 extends FunSuite with ShouldMatchers with TestHelperL
     conf =>
       val sourceHexapod = Hexapod(UUID.randomUUID())
       val destinationHexapod = Hexapod(UUID.randomUUID())
-      val transportEndpoint = new LocalEndpoint(new WeakReference(null), Endpoint.Direction.InOut, new LocalEndpoint.Nature(UUID.randomUUID))
       val publicKey = 1
       val g = 2
       val p = 3

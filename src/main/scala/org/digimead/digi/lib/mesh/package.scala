@@ -18,18 +18,23 @@
 
 package org.digimead.digi.lib
 
-import org.scala_tools.subcut.inject.NewBindingModule
-import org.digimead.digi.lib.mesh.hexapod.Hexapod
-import org.digimead.digi.lib.mesh.hexapod.AppHexapod
 import java.util.UUID
+
+import org.digimead.digi.lib.mesh.Mesh
+import org.digimead.digi.lib.mesh.Peer
+import org.digimead.digi.lib.mesh.hexapod.AppHexapod
+
+import com.escalatesoft.subcut.inject.NewBindingModule
 
 package object mesh {
   @volatile var isReady = false
   lazy val default = new NewBindingModule(module => {
-    lazy val meshSingleton = DependencyInjection.makeSingleton(implicit module => new Mesh, true)
+    lazy val meshSingleton = DependencyInjection.makeInitOnce(implicit module => new Mesh)
     module.bind[Mesh.Interface] toModuleSingle { meshSingleton(_) }
-    lazy val peerSingleton = DependencyInjection.makeSingleton(implicit module => new Peer, true)
+    lazy val peerSingleton = DependencyInjection.makeInitOnce(implicit module => new Peer)
     module.bind[Peer.Interface] toModuleSingle { peerSingleton(_) }
-    module.bind[Hexapod.AppHexapod] toSingle { new AppHexapod(UUID.fromString("00000000-0000-0000-0000-000000000000")) }
   }) ~ endpoint.default ~ communication.default ~ message.default
+  lazy val defaultFakeHexapod = new NewBindingModule(module => {
+    module.bind[AppHexapod] toSingle { new AppHexapod(UUID.fromString("00000000-0000-0000-0000-000000000000")) }
+  })
 }
