@@ -1,7 +1,7 @@
 /**
  * Digi-Lib-Mesh - distributed mesh library for Digi components
  *
- * Copyright (c) 2012 Alexey Aksenov ezh@ezh.msk.ru
+ * Copyright (c) 2012-2013 Alexey Aksenov ezh@ezh.msk.ru
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,9 +23,8 @@ import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.util.UUID
+
 import org.digimead.digi.lib.DependencyInjection
-import org.digimead.digi.lib.DependencyInjection.PersistentInjectable
-import org.digimead.digi.lib.aop.log
 import org.digimead.digi.lib.enc.Simple
 import org.digimead.digi.lib.log.Loggable
 import org.digimead.digi.lib.log.logger.RichLogger.rich2slf4j
@@ -34,10 +33,13 @@ import org.digimead.digi.lib.mesh.Mesh.mesh2implementation
 import org.digimead.digi.lib.mesh.communication.Communication
 import org.digimead.digi.lib.mesh.communication.Communication.communication2implementation
 import org.digimead.digi.lib.mesh.communication.Receptor
+import org.digimead.digi.lib.mesh.endpoint.Endpoint
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
 import org.digimead.digi.lib.mesh.hexapod.Hexapod.hexapod2app
+
+import com.escalatesoft.subcut.inject.BindingModule
+
 import javax.crypto.BadPaddingException
-import org.digimead.digi.lib.mesh.endpoint.Endpoint
 
 abstract class Message(
   val word: String,
@@ -106,10 +108,10 @@ abstract class Message(
   }
 }
 
-object Message extends PersistentInjectable with Loggable {
+object Message extends DependencyInjection.PersistentInjectable with Loggable {
   assert(org.digimead.digi.lib.mesh.isReady, "Mesh not ready, please build it first")
   implicit def bindingModule = DependencyInjection()
-  @volatile private var factory = (inject[Seq[Factory]] map (factory => factory.word -> factory) toMap)
+  private var factory = inject[Seq[Factory]].map(factory => factory.word -> factory).toMap
   /** number of hexapods that added to original destination */
   @volatile private var recipientRedundancy = 1
   Communication // start initialization if needed
@@ -195,11 +197,6 @@ object Message extends PersistentInjectable with Loggable {
         None
     }
   }
-  def commitInjection() { factory.values.foreach(Communication.registerGlobal) }
-  def updateInjection() = {
-    factory.values.foreach(Communication.unregisterGlobal)
-    factory = (inject[Seq[Factory]] map (factory => factory.word -> factory) toMap)
-  }
   private def parseRawMessageBody(body: Array[Byte]): (Hexapod, UUID, Long, String, Byte, Array[Byte]) = {
     val bais = new ByteArrayInputStream(body)
     val r = new DataInputStream(bais)
@@ -222,6 +219,16 @@ object Message extends PersistentInjectable with Loggable {
     val toHexapod: Hexapod = Hexapod(toHexapodUUID)
     val conversationUUID = new UUID(conversationMSB, conversationLSB)
     (toHexapod, conversationUUID, creationTimestamp, word, distance, content)
+  }
+  /*
+   * dependency injection
+   */
+  override def afterInjection(newModule: BindingModule) {
+    factory = inject[Seq[Factory]].map(factory => factory.word -> factory).toMap
+    factory.values.foreach(Communication.registerGlobal)
+  }
+  override def onClearInjection(oldModule: BindingModule) {
+    factory.values.foreach(Communication.unregisterGlobal)
   }
 
   /**

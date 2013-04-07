@@ -1,7 +1,7 @@
 /**
  * Digi-Lib-Mesh - distributed mesh library for Digi components
  *
- * Copyright (c) 2012 Alexey Aksenov ezh@ezh.msk.ru
+ * Copyright (c) 2012-2013 Alexey Aksenov ezh@ezh.msk.ru
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,16 +29,16 @@ import scala.collection.mutable.SynchronizedMap
 import scala.ref.WeakReference
 
 import org.digimead.digi.lib.DependencyInjection
-import org.digimead.digi.lib.DependencyInjection.PersistentInjectable
 import org.digimead.digi.lib.aop.log
 import org.digimead.digi.lib.log.Loggable
 import org.digimead.digi.lib.log.logger.RichLogger.rich2slf4j
-import org.digimead.digi.lib.mesh.communication.Communication
-import org.digimead.digi.lib.mesh.endpoint.Endpoint
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
 import org.digimead.digi.lib.mesh.message.Message
+
 import com.escalatesoft.subcut.inject.BindingModule
 import com.escalatesoft.subcut.inject.Injectable
+
+import language.implicitConversions
 
 /**
  * Class Mesh is default implementation for Mesh singleton.
@@ -100,31 +100,31 @@ class Mesh(implicit val bindingModule: BindingModule) extends Injectable with Me
  * Mesh -> Message -> Communication -> Hexapod -> Endpoint
  *                                  -> Peer
  */
-object Mesh extends PersistentInjectable with Loggable {
+object Mesh extends DependencyInjection.PersistentInjectable with Loggable {
   type Pub = Publisher[Event]
   type Sub = Subscriber[Event, Pub]
-  implicit def mesh2implementation(m: Mesh.type): Interface = m.implementation
+  implicit def mesh2implementation(m: Mesh.type): Interface = m.inner
   implicit def bindingModule = DependencyInjection()
-  @volatile private var implementation = inject[Interface]
   log.debug("build mesh infrastructure")
   org.digimead.digi.lib.mesh.isReady = true
   Message // start initialization if needed
 
-  def inner() = implementation
-  def commitInjection() {}
-  def updateInjection() { implementation = inject[Interface] }
+  /*
+   * dependency injection
+   */
+  def inner() = inject[Interface]
 
   trait Interface extends Mesh.Pub with Loggable {
     protected val entity: HashMap[UUID, WeakReference[Hexapod]]
 
-    def apply(): Iterable[Hexapod] = implementation.entity.values.flatMap(_.get)
-    def apply(uuid: UUID): Option[Hexapod] = implementation.entity.get(uuid).flatMap(_.get)
+    def apply(): Iterable[Hexapod] = Mesh.inner.entity.values.flatMap(_.get)
+    def apply(uuid: UUID): Option[Hexapod] = Mesh.inner.entity.get(uuid).flatMap(_.get)
     def register(entity: Hexapod): Boolean
     def unregister(entity: Hexapod): Boolean
     override protected def publish(event: Mesh.Event) = try {
       super.publish(event)
     } catch {
-      case e =>
+      case e: Throwable =>
         log.error(e.getMessage(), e)
     }
   }

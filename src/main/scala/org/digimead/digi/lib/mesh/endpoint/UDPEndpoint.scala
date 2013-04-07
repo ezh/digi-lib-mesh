@@ -1,7 +1,7 @@
 /**
  * Digi-Lib-Mesh - distributed mesh library for Digi components
  *
- * Copyright (c) 2012 Alexey Aksenov ezh@ezh.msk.ru
+ * Copyright (c) 2012-2013 Alexey Aksenov ezh@ezh.msk.ru
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -84,13 +84,13 @@ class UDPEndpoint(
               try {
                 receive(packet.getData())
               } catch {
-                case e =>
+                case e: Throwable =>
                   log.error(e.getMessage, e)
               }
             } catch {
               case e: SocketException if e.getMessage == "Socket closed" =>
                 log.debug("socket closed")
-              case e =>
+              case e: Throwable =>
                 log.error(e.getMessage, e)
                 throw e
             }
@@ -140,7 +140,7 @@ class UDPEndpoint(
         false
     }
   } catch {
-    case e =>
+    case e: Throwable =>
       log.error(e.getMessage())
       false
   }

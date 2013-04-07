@@ -1,7 +1,7 @@
 /**
  * Digi-Lib-Mesh - distributed mesh library for Digi components
  *
- * Copyright (c) 2012 Alexey Aksenov ezh@ezh.msk.ru
+ * Copyright (c) 2012-2013 Alexey Aksenov ezh@ezh.msk.ru
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,13 +25,13 @@ import scala.collection.mutable.WeakHashMap
 import scala.ref.WeakReference
 
 import org.digimead.digi.lib.DependencyInjection
-import org.digimead.digi.lib.DependencyInjection.PersistentInjectable
-import org.digimead.digi.lib.aop.log
 import org.digimead.digi.lib.enc.Simple
 import org.digimead.digi.lib.log.Loggable
 import org.digimead.digi.lib.log.logger.RichLogger.rich2slf4j
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
 import org.digimead.digi.lib.mesh.message.Message
+
+import com.escalatesoft.subcut.inject.BindingModule
 
 /**
  * unique source/destination
@@ -143,24 +143,31 @@ trait Endpoint[T <: Endpoint.Nature] extends Publisher[Endpoint.Event] with Logg
   override protected def publish(event: Endpoint.Event) = try {
     super.publish(event)
   } catch {
-    case e =>
+    case e: Throwable =>
       log.error(e.getMessage(), e)
   }
 }
 
-object Endpoint extends PersistentInjectable {
+object Endpoint extends DependencyInjection.PersistentInjectable {
   assert(org.digimead.digi.lib.mesh.isReady, "Mesh not ready, please build it first")
   type Pub = Publisher[Event]
   type Sub = Subscriber[Event, Pub]
   implicit def bindingModule = DependencyInjection()
-  @volatile private var factory = inject[Seq[Factory]] map (factory => factory.protocol -> factory) toMap
-  @volatile private var maxKeyLifeTime = injectOptional[Long]("Mesh.Endpoint.MaxKeyLifeTime") getOrElse 60000L
-  @volatile private var maxKeyAccessTime = injectOptional[Int]("Mesh.Endpoint.MaxKeyAccessTime") getOrElse 100
+  private var factory = inject[Seq[Factory]].map(factory => factory.protocol -> factory).toMap
+  private var maxKeyLifeTime = injectOptional[Long]("Mesh.Endpoint.MaxKeyLifeTime") getOrElse 60000L
+  private var maxKeyAccessTime = injectOptional[Int]("Mesh.Endpoint.MaxKeyAccessTime") getOrElse 100
 
   def fromSignature(hexapod: Hexapod, signature: String): Option[Endpoint[_ <: Endpoint.Nature]] =
     signature.split("""'""").headOption.flatMap(protocol => factory.get(protocol).flatMap(_.fromSignature(hexapod, signature)))
-  def commitInjection() {}
-  def updateInjection() { factory = inject[Seq[Factory]] map (factory => factory.protocol -> factory) toMap }
+
+  /*
+   * dependency injection
+   */
+  override def afterInjection(newModule: BindingModule) {
+    factory = inject[Seq[Factory]].map(factory => factory.protocol -> factory).toMap
+    maxKeyLifeTime = injectOptional[Long]("Mesh.Endpoint.MaxKeyLifeTime") getOrElse 60000L
+    maxKeyAccessTime = injectOptional[Int]("Mesh.Endpoint.MaxKeyAccessTime") getOrElse 100
+  }
 
   object Priority extends Enumeration {
     val NONE = Value(0, "NONE")
@@ -227,8 +234,8 @@ object Endpoint extends PersistentInjectable {
   // event
   sealed trait Event
   object Event {
-    case class Connect(endpoint: Endpoint[_ <: Endpoint.Nature]) extends Event
-    case class PriorityShift(endpoint: Endpoint[_ <: Endpoint.Nature]) extends Event
-    case class Disconnect(endpoint: Endpoint[_ <: Endpoint.Nature]) extends Event
+    case class Connect[T <: Endpoint[_ <: Endpoint.Nature]](endpoint: T) extends Event
+    case class PriorityShift[T <: Endpoint[_ <: Endpoint.Nature]](endpoint: T) extends Event
+    case class Disconnect[T <: Endpoint[_ <: Endpoint.Nature]](endpoint: T) extends Event
   }
 }

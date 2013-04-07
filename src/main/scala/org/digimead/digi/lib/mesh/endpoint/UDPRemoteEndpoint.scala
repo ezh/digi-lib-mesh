@@ -1,7 +1,7 @@
 /**
  * Digi-Lib-Mesh - distributed mesh library for Digi components
  *
- * Copyright (c) 2012 Alexey Aksenov ezh@ezh.msk.ru
+ * Copyright (c) 2012-2013 Alexey Aksenov ezh@ezh.msk.ru
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -62,7 +62,7 @@ object UDPRemoteEndpoint extends Endpoint.Factory with Loggable {
           try {
             (Some(InetAddress.getByName(address)), port.headOption.map(_.toInt))
           } catch {
-            case e =>
+            case e: Throwable =>
               log.error("incorrect endpoint address \"%s\" at signature %s".format(address, signature))
               return None
           }

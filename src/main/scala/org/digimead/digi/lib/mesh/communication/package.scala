@@ -1,7 +1,7 @@
 /**
  * Digi-Lib-Mesh - distributed mesh library for Digi components
  *
- * Copyright (c) 2012 Alexey Aksenov ezh@ezh.msk.ru
+ * Copyright (c) 2012-2013 Alexey Aksenov ezh@ezh.msk.ru
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,12 +18,15 @@
 
 package org.digimead.digi.lib.mesh
 
-import com.escalatesoft.subcut.inject.NewBindingModule
 import org.digimead.digi.lib.DependencyInjection
+import org.digimead.digi.lib.mesh.communication.Communication
+
+import com.escalatesoft.subcut.inject.NewBindingModule
 
 package object communication {
   lazy val default = new NewBindingModule(module => {
     lazy val communicationSingleton = DependencyInjection.makeInitOnce(implicit module => new Communication)
     module.bind[Communication.Interface] toModuleSingle { communicationSingleton(_) }
   })
+  DependencyInjection.setPersistentInjectable("org.digimead.digi.lib.mesh.communication.Communication$")
 }

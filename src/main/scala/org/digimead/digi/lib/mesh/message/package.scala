@@ -1,8 +1,7 @@
 /**
-
  * Digi-Lib-Mesh - distributed mesh library for Digi components
  *
- * Copyright (c) 2012 Alexey Aksenov ezh@ezh.msk.ru
+ * Copyright (c) 2012-2013 Alexey Aksenov ezh@ezh.msk.ru
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +18,7 @@
 
 package org.digimead.digi.lib.mesh
 
+import org.digimead.digi.lib.DependencyInjection
 import org.digimead.digi.lib.mesh.message.DiffieHellman
 import org.digimead.digi.lib.mesh.message.Message
 import org.digimead.digi.lib.mesh.message.Ping
@@ -29,4 +29,7 @@ package object message {
   lazy val default = new NewBindingModule(module => {
     module.bind[Seq[Message.Factory]] toSingle { Seq(DiffieHellman, Ping) }
   })
+  DependencyInjection.setPersistentInjectable("org.digimead.digi.lib.mesh.message.DiffieHellman$")
+  DependencyInjection.setPersistentInjectable("org.digimead.digi.lib.mesh.message.Message$")
+  DependencyInjection.setPersistentInjectable("org.digimead.digi.lib.mesh.message.Ping$")
 }

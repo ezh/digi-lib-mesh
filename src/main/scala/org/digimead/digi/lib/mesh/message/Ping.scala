@@ -1,7 +1,7 @@
 /**
  * Digi-Lib-Mesh - distributed mesh library for Digi components
  *
- * Copyright (c) 2012 Alexey Aksenov ezh@ezh.msk.ru
+ * Copyright (c) 2012-2013 Alexey Aksenov ezh@ezh.msk.ru
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,18 +22,18 @@ import java.util.Date
 import java.util.UUID
 
 import org.digimead.digi.lib.DependencyInjection
-import org.digimead.digi.lib.DependencyInjection.PersistentInjectable
 import org.digimead.digi.lib.log.Loggable
 import org.digimead.digi.lib.log.logger.RichLogger.rich2slf4j
 import org.digimead.digi.lib.mesh.Mesh
 import org.digimead.digi.lib.mesh.Mesh.mesh2implementation
 import org.digimead.digi.lib.mesh.communication.Communication
 import org.digimead.digi.lib.mesh.communication.Communication.communication2implementation
-import org.digimead.digi.lib.mesh.communication.Receptor
 import org.digimead.digi.lib.mesh.communication.Stimulus
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
 import org.digimead.digi.lib.mesh.hexapod.Hexapod.hexapod2app
 import org.digimead.digi.lib.util.Util
+
+import com.escalatesoft.subcut.inject.BindingModule
 
 case class Ping(override val sourceHexapod: UUID,
   override val destinationHexapod: Option[UUID] = None,
@@ -75,16 +75,22 @@ class PingFactory extends Ping.Interface {
   }
 }
 
-object Ping extends PersistentInjectable with Message.Factory with Loggable {
+object Ping extends DependencyInjection.PersistentInjectable with Message.Factory with Loggable {
   val word = "ping"
   implicit def bindingModule = DependencyInjection()
-  @volatile private var implementation = injectIfBound[Interface] { new PingFactory }
+  /** The Ping instance cache */
+  private var implementation = injectIfBound[Interface] { new PingFactory }
 
   def build(from: Hexapod, to: Hexapod, conversation: UUID, timestamp: Long, word: String, distance: Byte,
     content: Array[Byte]) = implementation.build(from, to, conversation, timestamp, word, distance, content)
   def react(stimulus: Stimulus) = implementation.react(stimulus)
-  def commitInjection() {}
-  def updateInjection() { implementation = injectIfBound[Interface] { Ping.implementation } }
+
+  /*
+   * dependency injection
+   */
+  override def afterInjection(newModule: BindingModule) {
+    implementation = injectIfBound[Interface] { Ping.implementation }
+  }
 
   trait Interface extends Loggable {
     def build(from: Hexapod, to: Hexapod, conversation: UUID, timestamp: Long, word: String,

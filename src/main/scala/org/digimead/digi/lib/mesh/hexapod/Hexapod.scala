@@ -1,7 +1,7 @@
 /**
  * Digi-Lib-Mesh - distributed mesh library for Digi components
  *
- * Copyright (c) 2012 Alexey Aksenov ezh@ezh.msk.ru
+ * Copyright (c) 2012-2013 Alexey Aksenov ezh@ezh.msk.ru
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,7 +27,6 @@ import scala.collection.mutable.WeakHashMap
 import scala.math.BigInt.int2bigInt
 
 import org.digimead.digi.lib.DependencyInjection
-import org.digimead.digi.lib.DependencyInjection.PersistentInjectable
 import org.digimead.digi.lib.aop.log
 import org.digimead.digi.lib.enc.DiffieHellman
 import org.digimead.digi.lib.enc.Simple
@@ -36,7 +35,10 @@ import org.digimead.digi.lib.log.logger.RichLogger.rich2slf4j
 import org.digimead.digi.lib.mesh.Mesh
 import org.digimead.digi.lib.mesh.Mesh.mesh2implementation
 import org.digimead.digi.lib.mesh.endpoint.Endpoint
-import org.digimead.digi.lib.mesh.message.Message
+
+import com.escalatesoft.subcut.inject.BindingModule
+
+import language.implicitConversions
 
 class Hexapod private[hexapod] (val uuid: UUID) extends Hexapod.Pub with Loggable {
   /** Hexapod endpoints, head/best, last/worst */
@@ -98,7 +100,7 @@ class Hexapod private[hexapod] (val uuid: UUID) extends Hexapod.Pub with Loggabl
   override protected def publish(event: Hexapod.Event) = try {
     super.publish(event)
   } catch {
-    case e =>
+    case e: Throwable =>
       log.error(e.getMessage(), e)
   }
   @log
@@ -107,27 +109,33 @@ class Hexapod private[hexapod] (val uuid: UUID) extends Hexapod.Pub with Loggabl
   override def toString = "Hexapod[%08X]".format(uuid.hashCode())
 }
 
-object Hexapod extends PersistentInjectable with Loggable {
+object Hexapod extends DependencyInjection.PersistentInjectable with Loggable {
   assert(org.digimead.digi.lib.mesh.isReady, "Mesh not ready, please build it first")
   type Pub = Publisher[Event]
   type Sub = Subscriber[Event, Pub]
   implicit def hexapod2app(h: Hexapod.type): AppHexapod = h.applicationHexapod
   implicit def bindingModule = DependencyInjection()
-  @volatile private var applicationHexapod = inject[AppHexapod]
+  /** The Hexapod instance cache */
+  private var applicationHexapod = inject[AppHexapod]
   Endpoint // start initialization if needed
 
   def apply(uuid: UUID): Hexapod = Mesh(uuid) getOrElse { new Hexapod(uuid) }
   def inner() = applicationHexapod
-  def commitInjection() {}
-  def updateInjection() { applicationHexapod = inject[AppHexapod] }
   def recreateFromSignature(): Option[Hexapod] = {
     None
   }
 
+  /*
+   * dependency injection
+   */
+  override def afterInjection(newModule: BindingModule) {
+    applicationHexapod = inject[AppHexapod]
+  }
+
   sealed trait Event
   object Event {
-    case class Connect(val endpoint: Endpoint[_ <: Endpoint.Nature]) extends Event
-    case class Disconnect(val endpoint: Endpoint[_ <: Endpoint.Nature]) extends Event
+    case class Connect[T <: Endpoint[_ <: Endpoint.Nature]](val endpoint: T) extends Event
+    case class Disconnect[T <: Endpoint[_ <: Endpoint.Nature]](val endpoint: T) extends Event
     case class SetDiffieHellman(val hexapod: Hexapod) extends Event
   }
 }

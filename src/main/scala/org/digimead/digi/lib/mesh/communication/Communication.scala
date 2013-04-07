@@ -1,7 +1,7 @@
 /**
  * Digi-Lib-Mesh - distributed mesh library for Digi components
  *
- * Copyright (c) 2012 Alexey Aksenov ezh@ezh.msk.ru
+ * Copyright (c) 2012-2013 Alexey Aksenov ezh@ezh.msk.ru
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,6 @@ import scala.collection.mutable.Subscriber
 import scala.collection.mutable.SynchronizedMap
 
 import org.digimead.digi.lib.DependencyInjection
-import org.digimead.digi.lib.DependencyInjection.PersistentInjectable
 import org.digimead.digi.lib.aop.log
 import org.digimead.digi.lib.log.Loggable
 import org.digimead.digi.lib.log.logger.RichLogger.rich2slf4j
@@ -39,6 +38,8 @@ import org.digimead.digi.lib.mesh.message.Acknowledgement
 import org.digimead.digi.lib.mesh.message.Message
 import com.escalatesoft.subcut.inject.BindingModule
 import com.escalatesoft.subcut.inject.Injectable
+
+import language.implicitConversions
 
 class Communication(implicit val bindingModule: BindingModule) extends Injectable with Communication.Interface {
   val deliverMax = injectIfBound[Int]("Mesh.Communication.DeliverMax") { 3 }
@@ -218,7 +219,7 @@ class Communication(implicit val bindingModule: BindingModule) extends Injectabl
           log.warn("unable to sent %s: hexapod %s not found".format(message, message.sourceHexapod))
       }
     } catch {
-      case e =>
+      case e: Throwable =>
         log.error(e.getMessage(), e)
     }
   }
@@ -260,21 +261,27 @@ class Communication(implicit val bindingModule: BindingModule) extends Injectabl
   override def toString = "default communication implemetation"
 }
 
-object Communication extends PersistentInjectable with Loggable {
+object Communication extends DependencyInjection.PersistentInjectable with Loggable {
   assert(org.digimead.digi.lib.mesh.isReady, "Mesh not ready, please build it first")
   type Pub = Publisher[Event]
   type Sub = Subscriber[Event, Pub]
-  implicit def communication2implementation(communication: Communication.type): Interface = communication.implementation
+  implicit def communication2implementation(communication: Communication.type): Interface = communication.inner
   implicit def bindingModule = DependencyInjection()
-  @volatile private var implementation: Interface = inject[Interface]
   Hexapod // start initialization if needed
   Peer // start initialization if needed
 
-  def inner() = implementation
-  def commitInjection() { implementation.init() }
-  def updateInjection() {
-    implementation.deinit()
-    implementation = inject[Interface]
+  /*
+   * dependency injection
+   */
+  def inner() = inject[Interface]
+  override def afterInjection(newModule: BindingModule) {
+    inner.init
+  }
+  override def beforeInjection(newModule: BindingModule) {
+    DependencyInjection.assertLazy[Interface](None, newModule)
+  }
+  override def onClearInjection(oldModule: BindingModule) {
+    inner.deinit()
   }
 
   trait Interface extends Communication.Pub with Receptor with Loggable {
@@ -299,7 +306,7 @@ object Communication extends PersistentInjectable with Loggable {
     override protected def publish(event: Communication.Event) = try {
       super.publish(event)
     } catch {
-      case e =>
+      case e: Throwable =>
         log.error(e.getMessage(), e)
     }
   }

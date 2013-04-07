@@ -21,9 +21,11 @@ organization := "org.digimead"
 
 version <<= (baseDirectory) { (b) => scala.io.Source.fromFile(b / "version").mkString.trim }
 
-scalaVersion := "2.9.2"
+scalaVersion := "2.10.1"
 
-scalacOptions ++= Seq("-encoding", "UTF-8", "-deprecation", "-unchecked", "-Xcheckinit") ++
+crossScalaVersions := Seq("2.10.1")
+
+scalacOptions ++= Seq("-encoding", "UTF-8", "-deprecation", "-unchecked", "-Xcheckinit", "-feature") ++
   (if (true || (System getProperty "java.runtime.version" startsWith "1.7")) Seq() else Seq("-optimize")) // -optimize fails with jdk7
 
 javacOptions ++= Seq("-Xlint:unchecked", "-Xlint:deprecation")
@@ -43,8 +45,8 @@ moduleConfigurations := {
 
 libraryDependencies ++= {
   Seq(
-    "org.digimead" %% "digi-lib" % "0.2.1-SNAPSHOT",
-    "org.digimead" %% "digi-lib-util" % "0.2.1-SNAPSHOT"
+    "org.digimead" %% "digi-lib" % "0.2.2-SNAPSHOT",
+    "org.digimead" %% "digi-lib-util" % "0.2.2-SNAPSHOT"
   )
 }
 
