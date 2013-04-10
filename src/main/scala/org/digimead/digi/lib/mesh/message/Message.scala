@@ -111,7 +111,7 @@ abstract class Message(
 object Message extends DependencyInjection.PersistentInjectable with Loggable {
   assert(org.digimead.digi.lib.mesh.isReady, "Mesh not ready, please build it first")
   implicit def bindingModule = DependencyInjection()
-  private var factory = inject[Seq[Factory]].map(factory => factory.word -> factory).toMap
+  @volatile private var factory = inject[Seq[Factory]].map(factory => factory.word -> factory).toMap
   /** number of hexapods that added to original destination */
   @volatile private var recipientRedundancy = 1
   Communication // start initialization if needed
@@ -223,11 +223,11 @@ object Message extends DependencyInjection.PersistentInjectable with Loggable {
   /*
    * dependency injection
    */
-  override def afterInjection(newModule: BindingModule) {
+  override def injectionAfter(newModule: BindingModule) {
     factory = inject[Seq[Factory]].map(factory => factory.word -> factory).toMap
     factory.values.foreach(Communication.registerGlobal)
   }
-  override def onClearInjection(oldModule: BindingModule) {
+  override def injectionOnClear(oldModule: BindingModule) {
     factory.values.foreach(Communication.unregisterGlobal)
   }
 

@@ -116,7 +116,7 @@ object Hexapod extends DependencyInjection.PersistentInjectable with Loggable {
   implicit def hexapod2app(h: Hexapod.type): AppHexapod = h.applicationHexapod
   implicit def bindingModule = DependencyInjection()
   /** The Hexapod instance cache */
-  private var applicationHexapod = inject[AppHexapod]
+  @volatile private var applicationHexapod = inject[AppHexapod]
   Endpoint // start initialization if needed
 
   def apply(uuid: UUID): Hexapod = Mesh(uuid) getOrElse { new Hexapod(uuid) }
@@ -128,7 +128,7 @@ object Hexapod extends DependencyInjection.PersistentInjectable with Loggable {
   /*
    * dependency injection
    */
-  override def afterInjection(newModule: BindingModule) {
+  override def injectionAfter(newModule: BindingModule) {
     applicationHexapod = inject[AppHexapod]
   }
 

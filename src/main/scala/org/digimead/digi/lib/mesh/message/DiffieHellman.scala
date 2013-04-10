@@ -147,7 +147,7 @@ object DiffieHellman extends DependencyInjection.PersistentInjectable with Messa
   /*
    * dependency injection
    */
-  override def afterInjection(newModule: BindingModule) {
+  override def injectionAfter(newModule: BindingModule) {
     implementation = injectIfBound[Interface] { DiffieHellman.implementation }
   }
 

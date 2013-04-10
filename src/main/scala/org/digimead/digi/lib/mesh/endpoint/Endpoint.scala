@@ -153,9 +153,9 @@ object Endpoint extends DependencyInjection.PersistentInjectable {
   type Pub = Publisher[Event]
   type Sub = Subscriber[Event, Pub]
   implicit def bindingModule = DependencyInjection()
-  private var factory = inject[Seq[Factory]].map(factory => factory.protocol -> factory).toMap
-  private var maxKeyLifeTime = injectOptional[Long]("Mesh.Endpoint.MaxKeyLifeTime") getOrElse 60000L
-  private var maxKeyAccessTime = injectOptional[Int]("Mesh.Endpoint.MaxKeyAccessTime") getOrElse 100
+  @volatile private var factory = inject[Seq[Factory]].map(factory => factory.protocol -> factory).toMap
+  @volatile private var maxKeyLifeTime = injectOptional[Long]("Mesh.Endpoint.MaxKeyLifeTime") getOrElse 60000L
+  @volatile private var maxKeyAccessTime = injectOptional[Int]("Mesh.Endpoint.MaxKeyAccessTime") getOrElse 100
 
   def fromSignature(hexapod: Hexapod, signature: String): Option[Endpoint[_ <: Endpoint.Nature]] =
     signature.split("""'""").headOption.flatMap(protocol => factory.get(protocol).flatMap(_.fromSignature(hexapod, signature)))
@@ -163,7 +163,7 @@ object Endpoint extends DependencyInjection.PersistentInjectable {
   /*
    * dependency injection
    */
-  override def afterInjection(newModule: BindingModule) {
+  override def injectionAfter(newModule: BindingModule) {
     factory = inject[Seq[Factory]].map(factory => factory.protocol -> factory).toMap
     maxKeyLifeTime = injectOptional[Long]("Mesh.Endpoint.MaxKeyLifeTime") getOrElse 60000L
     maxKeyAccessTime = injectOptional[Int]("Mesh.Endpoint.MaxKeyAccessTime") getOrElse 100

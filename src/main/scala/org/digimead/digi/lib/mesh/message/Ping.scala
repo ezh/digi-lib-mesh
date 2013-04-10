@@ -79,7 +79,7 @@ object Ping extends DependencyInjection.PersistentInjectable with Message.Factor
   val word = "ping"
   implicit def bindingModule = DependencyInjection()
   /** The Ping instance cache */
-  private var implementation = injectIfBound[Interface] { new PingFactory }
+  @volatile private var implementation = injectIfBound[Interface] { new PingFactory }
 
   def build(from: Hexapod, to: Hexapod, conversation: UUID, timestamp: Long, word: String, distance: Byte,
     content: Array[Byte]) = implementation.build(from, to, conversation, timestamp, word, distance, content)
@@ -88,7 +88,7 @@ object Ping extends DependencyInjection.PersistentInjectable with Message.Factor
   /*
    * dependency injection
    */
-  override def afterInjection(newModule: BindingModule) {
+  override def injectionAfter(newModule: BindingModule) {
     implementation = injectIfBound[Interface] { Ping.implementation }
   }
 
