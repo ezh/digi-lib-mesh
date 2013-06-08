@@ -20,7 +20,7 @@ package org.digimead.digi.lib.enc
 
 import scala.math.BigInt.int2bigInt
 import scala.util.Random
-import org.digimead.digi.lib.log.Loggable
+import org.digimead.digi.lib.log.api.Loggable
 import org.digimead.digi.lib.aop.log
 
 class DiffieHellman(val g: Int, val p: BigInt, val secretKey: BigInt, val publicKey: BigInt) extends Loggable {

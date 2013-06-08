@@ -26,8 +26,7 @@ import java.util.UUID
 
 import org.digimead.digi.lib.DependencyInjection
 import org.digimead.digi.lib.enc.Simple
-import org.digimead.digi.lib.log.Loggable
-import org.digimead.digi.lib.log.logger.RichLogger.rich2slf4j
+import org.digimead.digi.lib.log.api.Loggable
 import org.digimead.digi.lib.mesh.Mesh
 import org.digimead.digi.lib.mesh.Mesh.mesh2implementation
 import org.digimead.digi.lib.mesh.communication.Communication
@@ -108,10 +107,8 @@ abstract class Message(
   }
 }
 
-object Message extends DependencyInjection.PersistentInjectable with Loggable {
-  assert(org.digimead.digi.lib.mesh.isReady, "Mesh not ready, please build it first")
-  implicit def bindingModule = DependencyInjection()
-  @volatile private var factory = inject[Seq[Factory]].map(factory => factory.word -> factory).toMap
+object Message extends Loggable {
+  //assert(org.digimead.digi.lib.mesh.isReady, "Mesh not ready, please build it first")
   /** number of hexapods that added to original destination */
   @volatile private var recipientRedundancy = 1
   Communication // start initialization if needed
@@ -189,7 +186,7 @@ object Message extends DependencyInjection.PersistentInjectable with Loggable {
       log.warn("drop message %s, maximum distance riched")
       return None
     }
-    factory.get(word) match {
+    DI.factory.get(word) match {
       case Some(factory) =>
         factory.build(fromHexapod, toHexapod, conversation, timestamp, word, (distance + 1).toByte, content)
       case None =>
@@ -220,16 +217,6 @@ object Message extends DependencyInjection.PersistentInjectable with Loggable {
     val conversationUUID = new UUID(conversationMSB, conversationLSB)
     (toHexapod, conversationUUID, creationTimestamp, word, distance, content)
   }
-  /*
-   * dependency injection
-   */
-  override def injectionAfter(newModule: BindingModule) {
-    factory = inject[Seq[Factory]].map(factory => factory.word -> factory).toMap
-    factory.values.foreach(Communication.registerGlobal)
-  }
-  override def injectionOnClear(oldModule: BindingModule) {
-    factory.values.foreach(Communication.unregisterGlobal)
-  }
 
   /**
    * marker with message group
@@ -243,6 +230,17 @@ object Message extends DependencyInjection.PersistentInjectable with Loggable {
     val word: String
     /** recreate message from various parameters */
     def build(from: Hexapod, to: Hexapod, conversation: UUID, timestamp: Long, word: String, distance: Byte, content: Array[Byte]): Option[Message]
+  }
+  /**
+   * Dependency injection routines
+   */
+  private object DI extends DependencyInjection.PersistentInjectable {
+    /** Message factory */
+    lazy val factory = inject[Seq[Factory]].map(factory => factory.word -> factory).toMap
+
+    override def injectionCommit(newModule: BindingModule) {
+      factory.values.foreach(Communication.registerGlobal)
+    }
   }
 }
 

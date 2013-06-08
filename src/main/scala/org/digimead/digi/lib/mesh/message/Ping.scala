@@ -22,8 +22,7 @@ import java.util.Date
 import java.util.UUID
 
 import org.digimead.digi.lib.DependencyInjection
-import org.digimead.digi.lib.log.Loggable
-import org.digimead.digi.lib.log.logger.RichLogger.rich2slf4j
+import org.digimead.digi.lib.log.api.Loggable
 import org.digimead.digi.lib.mesh.Mesh
 import org.digimead.digi.lib.mesh.Mesh.mesh2implementation
 import org.digimead.digi.lib.mesh.communication.Communication
@@ -75,26 +74,23 @@ class PingFactory extends Ping.Interface {
   }
 }
 
-object Ping extends DependencyInjection.PersistentInjectable with Message.Factory with Loggable {
+object Ping extends Message.Factory with Loggable {
   val word = "ping"
-  implicit def bindingModule = DependencyInjection()
-  /** The Ping instance cache */
-  @volatile private var implementation = injectIfBound[Interface] { new PingFactory }
 
   def build(from: Hexapod, to: Hexapod, conversation: UUID, timestamp: Long, word: String, distance: Byte,
-    content: Array[Byte]) = implementation.build(from, to, conversation, timestamp, word, distance, content)
-  def react(stimulus: Stimulus) = implementation.react(stimulus)
-
-  /*
-   * dependency injection
-   */
-  override def injectionAfter(newModule: BindingModule) {
-    implementation = injectIfBound[Interface] { Ping.implementation }
-  }
+    content: Array[Byte]) = DI.implementation.build(from, to, conversation, timestamp, word, distance, content)
+  def react(stimulus: Stimulus) = DI.implementation.react(stimulus)
 
   trait Interface extends Loggable {
     def build(from: Hexapod, to: Hexapod, conversation: UUID, timestamp: Long, word: String,
       distance: Byte, content: Array[Byte]): Option[Message]
     def react(stimulus: Stimulus): Option[Boolean]
+  }
+  /**
+   * Dependency injection routines
+   */
+  private object DI extends DependencyInjection.PersistentInjectable {
+    /** The Ping instance */
+    lazy val implementation = injectIfBound[Interface] { new PingFactory }
   }
 }

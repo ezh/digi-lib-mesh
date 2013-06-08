@@ -26,8 +26,7 @@ import scala.collection.mutable.SynchronizedBuffer
 
 import org.digimead.digi.lib.DependencyInjection
 import org.digimead.digi.lib.aop.log
-import org.digimead.digi.lib.log.Loggable
-import org.digimead.digi.lib.log.logger.RichLogger.rich2slf4j
+import org.digimead.digi.lib.log.api.Loggable
 import org.digimead.digi.lib.mesh.Mesh.mesh2implementation
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
 
@@ -105,17 +104,13 @@ class Peer(implicit val bindingModule: BindingModule) extends Injectable with Pe
 /**
  * Singleton Peer contains global registry of discovered Hexapods
  */
-object Peer extends DependencyInjection.PersistentInjectable with Loggable {
-  assert(org.digimead.digi.lib.mesh.isReady, "Mesh not ready, please build it first")
+object Peer extends Loggable {
+  //assert(org.digimead.digi.lib.mesh.isReady, "Mesh not ready, please build it first")
   type Pub = Publisher[Event]
   type Sub = Subscriber[Event, Pub]
   implicit def peer2implementation(p: Peer.type): Interface = p.inner
-  implicit def bindingModule = DependencyInjection()
 
-  /*
-   * dependency injection
-   */
-  def inner() = inject[Interface]
+  def inner() = DI.implementation
 
   trait Interface extends Peer.Pub with Loggable {
     protected val pool: Buffer[Hexapod]
@@ -140,5 +135,12 @@ object Peer extends DependencyInjection.PersistentInjectable with Loggable {
   object Event {
     case class Add(hexapod: Hexapod) extends Event
     case class Remove(hexapod: Hexapod) extends Event
+  }
+  /**
+   * Dependency injection routines
+   */
+  private object DI extends DependencyInjection.PersistentInjectable {
+    /** Peer implementation */
+    lazy val implementation = inject[Interface]
   }
 }

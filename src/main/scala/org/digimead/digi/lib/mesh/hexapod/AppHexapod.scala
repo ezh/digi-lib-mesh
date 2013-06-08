@@ -26,8 +26,7 @@ import scala.collection.mutable.WeakHashMap
 
 import org.digimead.digi.lib.aop.log
 import org.digimead.digi.lib.enc.DiffieHellman
-import org.digimead.digi.lib.log.Loggable
-import org.digimead.digi.lib.log.logger.RichLogger.rich2slf4j
+import org.digimead.digi.lib.log.api.Loggable
 import org.digimead.digi.lib.mesh.communication.Communication
 import org.digimead.digi.lib.mesh.communication.Communication.communication2implementation
 import org.digimead.digi.lib.mesh.communication.Stimulus

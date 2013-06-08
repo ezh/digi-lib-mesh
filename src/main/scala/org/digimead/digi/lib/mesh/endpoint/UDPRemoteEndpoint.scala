@@ -23,8 +23,7 @@ import java.net.InetAddress
 import scala.Option.option2Iterable
 import scala.ref.WeakReference
 
-import org.digimead.digi.lib.log.Loggable
-import org.digimead.digi.lib.log.logger.RichLogger.rich2slf4j
+import org.digimead.digi.lib.log.api.Loggable
 import org.digimead.digi.lib.mesh.message.Message
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
 

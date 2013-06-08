@@ -23,39 +23,33 @@ import java.util.UUID
 import scala.ref.WeakReference
 
 import org.digimead.digi.lib.DependencyInjection
-import org.digimead.digi.lib.mesh.Mesh
-import org.digimead.lib.test.TestHelperLogging
-import org.scalatest.fixture.FunSpec
+import org.digimead.digi.lib.log.api.Loggable
+import org.digimead.lib.test.LoggingHelper
+import org.scalatest.FunSpec
 import org.scalatest.matchers.ShouldMatchers
 
-import com.escalatesoft.subcut.inject.NewBindingModule
-
-class LocalEndpointSpec_j1 extends FunSpec with ShouldMatchers with TestHelperLogging {
-  type FixtureParam = Map[String, Any]
-
-  override def withFixture(test: OneArgTest) {
-    DependencyInjection.get.foreach(_ => DependencyInjection.clear)
-    DependencyInjection.set(org.digimead.digi.lib.mesh.defaultFakeHexapod ~ org.digimead.digi.lib.mesh.default ~ defaultConfig(test.configMap), { Mesh })
-    withLogging(test.configMap) {
-      test(test.configMap)
-    }
+class LocalEndpointSpec extends FunSpec with ShouldMatchers with LoggingHelper with Loggable {
+  after { adjustLoggingAfter }
+  before {
+    DependencyInjection(org.digimead.digi.lib.mesh.defaultFakeHexapod ~
+      org.digimead.digi.lib.mesh.default ~ org.digimead.digi.lib.default, false)
+    adjustLoggingBefore
   }
-
-  def resetConfig(newConfig: NewBindingModule = new NewBindingModule(module => {})) = DependencyInjection.reset(newConfig ~ DependencyInjection())
 
   describe("A LocalEndpoint") {
     it("should have (de)serialization via signature") {
-      config =>
-        val epaddr = UUID.randomUUID()
-        val ep = new LocalEndpoint(new WeakReference(null), Endpoint.Direction.InOut, new LocalEndpoint.Nature(epaddr), -1)
-        ep.nature.address should be(epaddr.toString())
-        ep.nature.toString should be("local://" + epaddr.toString())
-        ep.signature should be("local'" + epaddr.toString() + "'-1'InOut'")
-        ep.actualPriority should be(-1)
-        val serialized = ep.signature
-        val epCopy = Endpoint.fromSignature(null, serialized)
-        epCopy.get.nature.toString should be(ep.nature.toString)
-        epCopy.get.signature.toString should be(ep.signature.toString)
+      val epaddr = UUID.randomUUID()
+      val ep = new LocalEndpoint(new WeakReference(null), Endpoint.Direction.InOut, new LocalEndpoint.Nature(epaddr), -1)
+      ep.nature.address should be(epaddr.toString())
+      ep.nature.toString should be("local://" + epaddr.toString())
+      ep.signature should be("local'" + epaddr.toString() + "'-1'InOut'")
+      ep.actualPriority should be(-1)
+      val serialized = ep.signature
+      val epCopy = Endpoint.fromSignature(null, serialized)
+      epCopy.get.nature.toString should be(ep.nature.toString)
+      epCopy.get.signature.toString should be(ep.signature.toString)
     }
   }
+
+  override def beforeAll(configMap: Map[String, Any]) { adjustLoggingBeforeAll(configMap) }
 }

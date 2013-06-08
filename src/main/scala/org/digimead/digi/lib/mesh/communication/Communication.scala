@@ -25,8 +25,7 @@ import scala.collection.mutable.SynchronizedMap
 
 import org.digimead.digi.lib.DependencyInjection
 import org.digimead.digi.lib.aop.log
-import org.digimead.digi.lib.log.Loggable
-import org.digimead.digi.lib.log.logger.RichLogger.rich2slf4j
+import org.digimead.digi.lib.log.api.Loggable
 import org.digimead.digi.lib.mesh.Mesh
 import org.digimead.digi.lib.mesh.Mesh.mesh2implementation
 import org.digimead.digi.lib.mesh.Peer
@@ -261,28 +260,18 @@ class Communication(implicit val bindingModule: BindingModule) extends Injectabl
   override def toString = "default communication implemetation"
 }
 
-object Communication extends DependencyInjection.PersistentInjectable with Loggable {
-  assert(org.digimead.digi.lib.mesh.isReady, "Mesh not ready, please build it first")
+object Communication extends Loggable {
+  //assert(org.digimead.digi.lib.mesh.isReady, "Mesh not ready, please build it first")
   type Pub = Publisher[Event]
   type Sub = Subscriber[Event, Pub]
   implicit def communication2implementation(communication: Communication.type): Interface = communication.inner
-  implicit def bindingModule = DependencyInjection()
   Hexapod // start initialization if needed
   Peer // start initialization if needed
 
   /*
    * dependency injection
    */
-  def inner() = inject[Interface]
-  override def injectionAfter(newModule: BindingModule) {
-    inner.init
-  }
-  override def injectionBefore(newModule: BindingModule) {
-    DependencyInjection.assertLazy[Interface](None, newModule)
-  }
-  override def injectionOnClear(oldModule: BindingModule) {
-    inner.deinit()
-  }
+  def inner() = DI.implementation
 
   trait Interface extends Communication.Pub with Receptor with Loggable {
     /** Number of deliver attempt */
@@ -333,5 +322,12 @@ object Communication extends DependencyInjection.PersistentInjectable with Logga
     case class Delivered(message: Message) extends Event
     case class Success(message: Message) extends Event
     case class Fail(message: Message) extends Event
+  }
+  /**
+   * Dependency injection routines
+   */
+  private object DI extends DependencyInjection.PersistentInjectable {
+    /** Communication implementation */
+    lazy val implementation = inject[Interface]
   }
 }

@@ -28,8 +28,7 @@ import java.util.UUID
 import scala.math.BigInt.int2bigInt
 
 import org.digimead.digi.lib.DependencyInjection
-import org.digimead.digi.lib.log.Loggable
-import org.digimead.digi.lib.log.logger.RichLogger.rich2slf4j
+import org.digimead.digi.lib.log.api.Loggable
 import org.digimead.digi.lib.mesh.Mesh
 import org.digimead.digi.lib.mesh.Mesh.mesh2implementation
 import org.digimead.digi.lib.mesh.communication.Communication
@@ -135,25 +134,23 @@ class DiffieHellmanFactory extends DiffieHellman.Interface {
   }
 }
 
-object DiffieHellman extends DependencyInjection.PersistentInjectable with Message.Factory with Loggable {
+object DiffieHellman extends Message.Factory with Loggable {
   val word = "dh"
-  implicit def bindingModule = DependencyInjection()
-  @volatile private var implementation = injectIfBound[Interface] { new DiffieHellmanFactory }
 
   def build(from: Hexapod, to: Hexapod, conversation: UUID, timestamp: Long, word: String, distance: Byte,
-    content: Array[Byte]) = implementation.build(from, to, conversation, timestamp, word, distance, content)
-  def react(stimulus: Stimulus) = implementation.react(stimulus)
-
-  /*
-   * dependency injection
-   */
-  override def injectionAfter(newModule: BindingModule) {
-    implementation = injectIfBound[Interface] { DiffieHellman.implementation }
-  }
+    content: Array[Byte]) = DI.implementation.build(from, to, conversation, timestamp, word, distance, content)
+  def react(stimulus: Stimulus) = DI.implementation.react(stimulus)
 
   trait Interface extends Loggable {
     def build(from: Hexapod, to: Hexapod, conversation: UUID, timestamp: Long, word: String,
       distance: Byte, content: Array[Byte]): Option[Message]
     def react(stimulus: Stimulus): Option[Boolean]
+  }
+  /**
+   * Dependency injection routines
+   */
+  private object DI extends DependencyInjection.PersistentInjectable {
+    /** DiffieHellman implementation */
+    lazy val implementation = injectIfBound[Interface] { new DiffieHellmanFactory }
   }
 }

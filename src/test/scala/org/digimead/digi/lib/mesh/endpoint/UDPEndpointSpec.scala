@@ -23,39 +23,34 @@ import java.net.InetAddress
 import scala.ref.WeakReference
 
 import org.digimead.digi.lib.DependencyInjection
-import org.digimead.digi.lib.mesh.Mesh
-import org.digimead.lib.test.TestHelperLogging
-import org.scalatest.fixture.FunSpec
+import org.digimead.digi.lib.log.api.Loggable
+import org.digimead.lib.test.LoggingHelper
+import org.scalatest.FunSpec
 import org.scalatest.matchers.ShouldMatchers
 
-import com.escalatesoft.subcut.inject.NewBindingModule
-
-class UDPEndpointSpec_j1 extends FunSpec with ShouldMatchers with TestHelperLogging {
-  type FixtureParam = Map[String, Any]
-
-  override def withFixture(test: OneArgTest) {
-    DependencyInjection.get.foreach(_ => DependencyInjection.clear)
-    DependencyInjection.set(org.digimead.digi.lib.mesh.defaultFakeHexapod ~ org.digimead.digi.lib.mesh.default ~ defaultConfig(test.configMap), { Mesh })
-    withLogging(test.configMap) {
-      test(test.configMap)
-    }
+class UDPEndpointSpec extends FunSpec with ShouldMatchers with LoggingHelper with Loggable {
+  after { adjustLoggingAfter }
+  before {
+    DependencyInjection(org.digimead.digi.lib.mesh.defaultFakeHexapod ~
+      org.digimead.digi.lib.mesh.default ~ org.digimead.digi.lib.default, false)
+    adjustLoggingBefore
   }
-
-  def resetConfig(newConfig: NewBindingModule = new NewBindingModule(module => {})) = DependencyInjection.reset(newConfig ~ DependencyInjection())
 
   describe("A UDPEndpointSpec") {
     it("should have (de)serialization via signature") {
-      config =>
-        val ep = new UDPEndpoint(new WeakReference(null), Endpoint.Direction.In,
-          new UDPEndpoint.Nature(Some(InetAddress.getLocalHost()), Some(12345)))
-        ep.nature.address should be("127.0.0.1:12345")
-        ep.nature.toString should be("udp://127.0.0.1:12345")
-        ep.signature should be("udp'127.0.0.1:12345'10'In'")
-        val serialized = ep.signature
-        val epCopy = Endpoint.fromSignature(null, serialized)
-        epCopy.get.nature.toString should be(ep.nature.toString)
-        epCopy.get.signature.toString should be(ep.signature.toString)
-        epCopy.get.getClass() should be(classOf[UDPRemoteEndpoint])
+      val ep = new UDPEndpoint(new WeakReference(null), Endpoint.Direction.In,
+        new UDPEndpoint.Nature(Some(InetAddress.getLocalHost()), Some(12345)))
+      ep.nature.address should be("127.0.0.1:12345")
+      ep.nature.toString should be("udp://127.0.0.1:12345")
+      ep.signature should be("udp'127.0.0.1:12345'10'In'")
+      val serialized = ep.signature
+      val epCopy = Endpoint.fromSignature(null, serialized)
+      epCopy.get.nature.toString should be(ep.nature.toString)
+      epCopy.get.signature.toString should be(ep.signature.toString)
+      epCopy.get.getClass() should be(classOf[UDPRemoteEndpoint])
     }
   }
+
+  override def beforeAll(configMap: Map[String, Any]) { adjustLoggingBeforeAll(configMap) }
 }
+

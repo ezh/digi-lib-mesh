@@ -28,5 +28,5 @@ package object communication {
     lazy val communicationSingleton = DependencyInjection.makeInitOnce(implicit module => new Communication)
     module.bind[Communication.Interface] toModuleSingle { communicationSingleton(_) }
   })
-  DependencyInjection.setPersistentInjectable("org.digimead.digi.lib.mesh.communication.Communication$")
+  DependencyInjection.setPersistentInjectable("org.digimead.digi.lib.mesh.communication.Communication$DI$")
 }

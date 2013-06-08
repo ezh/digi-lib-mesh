@@ -29,5 +29,5 @@ package object endpoint {
   lazy val default = new NewBindingModule(module => {
     module.bind[Seq[Endpoint.Factory]] toSingle { Seq(LocalEndpoint, UDPRemoteEndpoint) }
   })
-  DependencyInjection.setPersistentInjectable("org.digimead.digi.lib.mesh.endpoint.Endpoint$")
+  DependencyInjection.setPersistentInjectable("org.digimead.digi.lib.mesh.endpoint.Endpoint$DI$")
 }

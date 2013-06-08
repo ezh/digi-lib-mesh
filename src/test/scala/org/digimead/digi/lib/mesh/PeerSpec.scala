@@ -21,96 +21,86 @@ package org.digimead.digi.lib.mesh
 import java.util.UUID
 
 import org.digimead.digi.lib.DependencyInjection
+import org.digimead.digi.lib.log.api.Loggable
 import org.digimead.digi.lib.mesh.Mesh.mesh2implementation
 import org.digimead.digi.lib.mesh.Peer.peer2implementation
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
-import org.digimead.lib.test.TestHelperLogging
-import org.digimead.lib.test.TestHelperMatchers
+import org.digimead.lib.test.LoggingHelper
+import org.digimead.lib.test.MatcherHelper
 import org.scalatest.PrivateMethodTester
-import org.scalatest.fixture.FunSpec
+import org.scalatest.WordSpec
 import org.scalatest.matchers.ShouldMatchers
 
 import com.escalatesoft.subcut.inject.BindingModule
 import com.escalatesoft.subcut.inject.NewBindingModule
 
-class PeerSpec_j1 extends FunSpec with ShouldMatchers with TestHelperLogging with PrivateMethodTester with TestHelperMatchers {
-  type FixtureParam = Map[String, Any]
+class PeerSpec extends WordSpec with ShouldMatchers with LoggingHelper with PrivateMethodTester with MatcherHelper with Loggable {
+  val custom = new NewBindingModule(module => {
+    lazy val peerSingleton = DependencyInjection.makeInitOnce(implicit module => new MyPeer)
+    module.bind[Peer.Interface] toModuleSingle { peerSingleton(_) }
+  })
 
-  override def withFixture(test: OneArgTest) {
-    DependencyInjection.get.foreach(_ => DependencyInjection.clear)
-    val custom = new NewBindingModule(module => {
-      lazy val peerSingleton = DependencyInjection.makeInitOnce(implicit module => new MyPeer)
-      module.bind[Peer.Interface] toModuleSingle { peerSingleton(_) }
-    })
-    DependencyInjection.set(custom ~ org.digimead.digi.lib.mesh.defaultFakeHexapod ~
-      org.digimead.digi.lib.mesh.default ~ defaultConfig(test.configMap), { Mesh })
-    withLogging(test.configMap) {
-      test(test.configMap)
-    }
+  after { adjustLoggingAfter }
+  before {
+    DependencyInjection(custom ~ org.digimead.digi.lib.mesh.defaultFakeHexapod ~
+      org.digimead.digi.lib.mesh.default ~ org.digimead.digi.lib.default, false)
+    adjustLoggingBefore
   }
 
-  def resetConfig(newConfig: NewBindingModule = new NewBindingModule(module => {})) = DependencyInjection.reset(newConfig ~ DependencyInjection())
+  "A Peer" should {
+    "be the same even after reinitialization" in {
+      val peer1 = DependencyInjection().inject[Peer.Interface](None)
+      Peer().foreach(Peer.remove)
+      val peer2 = DependencyInjection().inject[Peer.Interface](None)
+      peer1 should be theSameInstanceAs peer2
+    }
+    "register and unregister hexapods" in {
+      Mesh().foreach(Mesh.unregister)
+      Peer().foreach(Peer.remove)
+      val pool = Peer.inner.asInstanceOf[MyPeer].getPool
+      val hexapod = Hexapod(UUID.randomUUID())
+      pool should be('empty)
+      Mesh(hexapod.uuid) should not be ('empty)
+      Peer.add(hexapod) should be(true)
+      Mesh(hexapod.uuid) should be(Some(hexapod))
+      pool should contain(hexapod)
+      Peer.add(hexapod) should be(false)
 
-  describe("A Peer") {
-    it("should be the same even after reinitialization") {
-      config =>
-        Peer().foreach(Peer.remove)
-        resetConfig()
-        val peer1 = DependencyInjection().inject[Peer.Interface](None)
-        resetConfig()
-        val peer2 = DependencyInjection().inject[Peer.Interface](None)
-        peer1 should be theSameInstanceAs peer2
+      Peer.remove(hexapod) should be(true)
+      pool should be('empty)
+      Peer.remove(hexapod) should be(false)
     }
-    it("should register and unregister hexapods") {
-      config =>
-        Mesh().foreach(Mesh.unregister)
-        Peer().foreach(Peer.remove)
-        resetConfig()
-        val pool = Peer.inner.asInstanceOf[MyPeer].getPool
-        val hexapod = Hexapod(UUID.randomUUID())
-        pool should be('empty)
-        Mesh(hexapod.uuid) should not be ('empty)
-        Peer.add(hexapod) should be(true)
-        Mesh(hexapod.uuid) should be(Some(hexapod))
-        pool should contain(hexapod)
-        Peer.add(hexapod) should be(false)
+    "provide access to registered entities" in {
+      Peer().foreach(Peer.remove)
+      val pool = Peer.inner.asInstanceOf[MyPeer].getPool
+      val hexapod = Hexapod(UUID.randomUUID())
+      Peer() should be('empty)
+      Peer.add(hexapod) should be(true)
+      Peer() should not be ('empty)
+    }
+    "should publish register and unregister events" in {
+      Peer().foreach(Peer.remove)
 
-        Peer.remove(hexapod) should be(true)
-        pool should be('empty)
-        Peer.remove(hexapod) should be(false)
-    }
-    it("should provide access to registered entities") {
-      config =>
-        Peer().foreach(Peer.remove)
-        resetConfig()
-        val pool = Peer.inner.asInstanceOf[MyPeer].getPool
-        val hexapod = Hexapod(UUID.randomUUID())
-        Peer() should be('empty)
-        Peer.add(hexapod) should be(true)
-        Peer() should not be ('empty)
-    }
-    it("should publish register and unregister events") {
-      config =>
-        Peer().foreach(Peer.remove)
-        resetConfig()
-        var event: Peer.Event = null
-        val subscriber = new Peer.Sub {
-          override def notify(pub: Peer.Pub, evt: Peer.Event) {
-            assert(event == null)
-            event = evt
-          }
+      var event: Peer.Event = null
+      val subscriber = new Peer.Sub {
+        override def notify(pub: Peer.Pub, evt: Peer.Event) {
+          assert(event == null)
+          event = evt
         }
-        Peer.subscribe(subscriber)
-        val hexapod = Hexapod(UUID.randomUUID())
-        Peer.add(hexapod)
-        expectDefined(event) { case Peer.Event.Add(hexapod) => }
+      }
+      Peer.subscribe(subscriber)
+      val hexapod = Hexapod(UUID.randomUUID())
+      Peer.add(hexapod)
+      expectDefined(event) { case Peer.Event.Add(hexapod) => }
 
-        event = null
-        Peer.remove(hexapod)
-        expectDefined(event) { case Peer.Event.Remove(hexapod) => }
-        Peer.removeSubscription(subscriber)
+      event = null
+      Peer.remove(hexapod)
+      expectDefined(event) { case Peer.Event.Remove(hexapod) => }
+      Peer.removeSubscription(subscriber)
     }
   }
+
+  override def beforeAll(configMap: Map[String, Any]) { adjustLoggingBeforeAll(configMap) }
 
   class MyPeer(implicit override val bindingModule: BindingModule) extends Peer {
     def getPool = pool

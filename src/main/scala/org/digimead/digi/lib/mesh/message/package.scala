@@ -29,7 +29,7 @@ package object message {
   lazy val default = new NewBindingModule(module => {
     module.bind[Seq[Message.Factory]] toSingle { Seq(DiffieHellman, Ping) }
   })
-  DependencyInjection.setPersistentInjectable("org.digimead.digi.lib.mesh.message.DiffieHellman$")
-  DependencyInjection.setPersistentInjectable("org.digimead.digi.lib.mesh.message.Message$")
-  DependencyInjection.setPersistentInjectable("org.digimead.digi.lib.mesh.message.Ping$")
+  DependencyInjection.setPersistentInjectable("org.digimead.digi.lib.mesh.message.DiffieHellman$DI$")
+  DependencyInjection.setPersistentInjectable("org.digimead.digi.lib.mesh.message.Message$DI$")
+  DependencyInjection.setPersistentInjectable("org.digimead.digi.lib.mesh.message.Ping$DI$")
 }

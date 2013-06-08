@@ -30,8 +30,7 @@ import scala.ref.WeakReference
 
 import org.digimead.digi.lib.DependencyInjection
 import org.digimead.digi.lib.aop.log
-import org.digimead.digi.lib.log.Loggable
-import org.digimead.digi.lib.log.logger.RichLogger.rich2slf4j
+import org.digimead.digi.lib.log.api.Loggable
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
 import org.digimead.digi.lib.mesh.message.Message
 
@@ -100,19 +99,15 @@ class Mesh(implicit val bindingModule: BindingModule) extends Injectable with Me
  * Mesh -> Message -> Communication -> Hexapod -> Endpoint
  *                                  -> Peer
  */
-object Mesh extends DependencyInjection.PersistentInjectable with Loggable {
+object Mesh extends Loggable {
   type Pub = Publisher[Event]
   type Sub = Subscriber[Event, Pub]
   implicit def mesh2implementation(m: Mesh.type): Interface = m.inner
-  implicit def bindingModule = DependencyInjection()
-  log.debug("build mesh infrastructure")
+  log.debug("Build mesh infrastructure.")
   org.digimead.digi.lib.mesh.isReady = true
   Message // start initialization if needed
 
-  /*
-   * dependency injection
-   */
-  def inner() = inject[Interface]
+  def inner() = DI.implementation
 
   trait Interface extends Mesh.Pub with Loggable {
     protected val entity: HashMap[UUID, WeakReference[Hexapod]]
@@ -132,5 +127,12 @@ object Mesh extends DependencyInjection.PersistentInjectable with Loggable {
   object Event {
     case class Register(hexapod: Hexapod) extends Event
     case class Unregister(hexapod: Hexapod) extends Event
+  }
+  /**
+   * Dependency injection routines
+   */
+  private object DI extends DependencyInjection.PersistentInjectable {
+    /** Communication implementation */
+    lazy val implementation = inject[Interface]
   }
 }

@@ -1,0 +1,15 @@
+Communication init deinit
+  override def injectionAfter(newModule: BindingModule) {
+    inner.init
+  }
+  override def injectionBefore(newModule: BindingModule) {
+    DependencyInjection.assertLazy[Interface](None, newModule)
+  }
+  override def injectionOnClear(oldModule: BindingModule) {
+    inner.deinit()
+  }
+
+
+
+
+

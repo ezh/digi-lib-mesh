@@ -37,7 +37,7 @@ package object mesh {
   lazy val defaultFakeHexapod = new NewBindingModule(module => {
     module.bind[AppHexapod] toSingle { new AppHexapod(UUID.fromString("00000000-0000-0000-0000-000000000000")) }
   })
-  DependencyInjection.setPersistentInjectable("org.digimead.digi.lib.mesh.Mesh$")
-  DependencyInjection.setPersistentInjectable("org.digimead.digi.lib.mesh.Peer$")
-  DependencyInjection.setPersistentInjectable("org.digimead.digi.lib.mesh.hexapod.Hexapod$")
+  DependencyInjection.setPersistentInjectable("org.digimead.digi.lib.mesh.Mesh$DI$")
+  DependencyInjection.setPersistentInjectable("org.digimead.digi.lib.mesh.Peer$DI$")
+  DependencyInjection.setPersistentInjectable("org.digimead.digi.lib.mesh.hexapod.Hexapod$DI$")
 }

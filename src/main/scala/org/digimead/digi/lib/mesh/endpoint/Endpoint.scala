@@ -26,8 +26,7 @@ import scala.ref.WeakReference
 
 import org.digimead.digi.lib.DependencyInjection
 import org.digimead.digi.lib.enc.Simple
-import org.digimead.digi.lib.log.Loggable
-import org.digimead.digi.lib.log.logger.RichLogger.rich2slf4j
+import org.digimead.digi.lib.log.api.Loggable
 import org.digimead.digi.lib.mesh.hexapod.Hexapod
 import org.digimead.digi.lib.mesh.message.Message
 
@@ -148,26 +147,13 @@ trait Endpoint[T <: Endpoint.Nature] extends Publisher[Endpoint.Event] with Logg
   }
 }
 
-object Endpoint extends DependencyInjection.PersistentInjectable {
-  assert(org.digimead.digi.lib.mesh.isReady, "Mesh not ready, please build it first")
+object Endpoint {
+  //assert(org.digimead.digi.lib.mesh.isReady, "Mesh not ready, please build it first")
   type Pub = Publisher[Event]
   type Sub = Subscriber[Event, Pub]
-  implicit def bindingModule = DependencyInjection()
-  @volatile private var factory = inject[Seq[Factory]].map(factory => factory.protocol -> factory).toMap
-  @volatile private var maxKeyLifeTime = injectOptional[Long]("Mesh.Endpoint.MaxKeyLifeTime") getOrElse 60000L
-  @volatile private var maxKeyAccessTime = injectOptional[Int]("Mesh.Endpoint.MaxKeyAccessTime") getOrElse 100
 
   def fromSignature(hexapod: Hexapod, signature: String): Option[Endpoint[_ <: Endpoint.Nature]] =
-    signature.split("""'""").headOption.flatMap(protocol => factory.get(protocol).flatMap(_.fromSignature(hexapod, signature)))
-
-  /*
-   * dependency injection
-   */
-  override def injectionAfter(newModule: BindingModule) {
-    factory = inject[Seq[Factory]].map(factory => factory.protocol -> factory).toMap
-    maxKeyLifeTime = injectOptional[Long]("Mesh.Endpoint.MaxKeyLifeTime") getOrElse 60000L
-    maxKeyAccessTime = injectOptional[Int]("Mesh.Endpoint.MaxKeyAccessTime") getOrElse 100
-  }
+    signature.split("""'""").headOption.flatMap(protocol => DI.factory.get(protocol).flatMap(_.fromSignature(hexapod, signature)))
 
   object Priority extends Enumeration {
     val NONE = Value(0, "NONE")
@@ -184,8 +170,8 @@ object Endpoint extends DependencyInjection.PersistentInjectable {
       rawKey
     }
     def isExpired(): Boolean =
-      System.currentTimeMillis() - lastAccess > maxKeyLifeTime ||
-        accessCounter > maxKeyAccessTime
+      System.currentTimeMillis() - lastAccess > DI.maxKeyLifeTime ||
+        accessCounter > DI.maxKeyAccessTime
   }
   trait Factory {
     /** protocol name */
@@ -237,5 +223,13 @@ object Endpoint extends DependencyInjection.PersistentInjectable {
     case class Connect[T <: Endpoint[_ <: Endpoint.Nature]](endpoint: T) extends Event
     case class PriorityShift[T <: Endpoint[_ <: Endpoint.Nature]](endpoint: T) extends Event
     case class Disconnect[T <: Endpoint[_ <: Endpoint.Nature]](endpoint: T) extends Event
+  }
+  /**
+   * Dependency injection routines
+   */
+  private object DI extends DependencyInjection.PersistentInjectable {
+    lazy val factory = inject[Seq[Factory]].map(factory => factory.protocol -> factory).toMap
+    lazy val maxKeyLifeTime = injectOptional[Long]("Mesh.Endpoint.MaxKeyLifeTime") getOrElse 60000L
+    lazy val maxKeyAccessTime = injectOptional[Int]("Mesh.Endpoint.MaxKeyAccessTime") getOrElse 100
   }
 }

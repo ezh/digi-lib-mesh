@@ -22,43 +22,37 @@ import java.util.UUID
 
 import org.digimead.digi.lib.DependencyInjection
 import org.digimead.digi.lib.aop.log
-import org.digimead.digi.lib.mesh.Mesh
+import org.digimead.digi.lib.log.api.Loggable
 import org.digimead.digi.lib.mesh.endpoint.Endpoint
 import org.digimead.digi.lib.mesh.endpoint.LocalEndpoint
-import org.digimead.lib.test.TestHelperLogging
-import org.scalatest.fixture.FunSpec
+import org.digimead.lib.test.LoggingHelper
+import org.scalatest.FunSpec
 import org.scalatest.matchers.ShouldMatchers
 
-import com.escalatesoft.subcut.inject.NewBindingModule
-
-class HexapodSpec_j1 extends FunSpec with ShouldMatchers with TestHelperLogging {
-  type FixtureParam = Map[String, Any]
-
-  override def withFixture(test: OneArgTest) {
-    DependencyInjection.get.foreach(_ => DependencyInjection.clear)
-    DependencyInjection.set(org.digimead.digi.lib.mesh.default ~ org.digimead.digi.lib.mesh.defaultFakeHexapod ~ defaultConfig(test.configMap), { Mesh })
-    withLogging(test.configMap) {
-      test(test.configMap)
-    }
+class HexapodSpec extends FunSpec with ShouldMatchers with LoggingHelper with Loggable {
+  after { adjustLoggingAfter }
+  before {
+    DependencyInjection(org.digimead.digi.lib.mesh.defaultFakeHexapod ~
+      org.digimead.digi.lib.mesh.default ~ org.digimead.digi.lib.default, false)
+    adjustLoggingBefore
   }
-
-  def resetConfig(newConfig: NewBindingModule = new NewBindingModule(module => {})) = DependencyInjection.reset(newConfig ~ DependencyInjection())
 
   describe("A Hexapod") {
     it("should handle endpoints") {
-      config =>
-        val hexapod1 = Hexapod(UUID.randomUUID())
-        val ep1 = hexapod1.addEndpoint(new LocalEndpoint(Endpoint.Direction.InOut, new LocalEndpoint.Nature(UUID.randomUUID), 3)(_))
-        val ep2 = hexapod1.addEndpoint(new LocalEndpoint(Endpoint.Direction.InOut, new LocalEndpoint.Nature(UUID.randomUUID), 1)(_))
-        val ep3 = hexapod1.addEndpoint(new LocalEndpoint(Endpoint.Direction.InOut, new LocalEndpoint.Nature(UUID.randomUUID), 2)(_))
-        val ep4 = hexapod1.addEndpoint(new LocalEndpoint(Endpoint.Direction.InOut, new LocalEndpoint.Nature(UUID.randomUUID), 3)(_))
-        val ep5 = hexapod1.addEndpoint(new LocalEndpoint(Endpoint.Direction.InOut, new LocalEndpoint.Nature(UUID.randomUUID), 1)(_))
-        val ep6 = hexapod1.addEndpoint(new LocalEndpoint(Endpoint.Direction.InOut, new LocalEndpoint.Nature(UUID.randomUUID), 2)(_))
-        ep4.connect
-        ep5.connect
-        ep6.connect
-        ep1 should not be (ep2)
-        hexapod1.getEndpoints should be(Seq(ep4, ep6, ep5, ep1, ep3, ep2))
+      val hexapod1 = Hexapod(UUID.randomUUID())
+      val ep1 = hexapod1.addEndpoint(new LocalEndpoint(Endpoint.Direction.InOut, new LocalEndpoint.Nature(UUID.randomUUID), 3)(_))
+      val ep2 = hexapod1.addEndpoint(new LocalEndpoint(Endpoint.Direction.InOut, new LocalEndpoint.Nature(UUID.randomUUID), 1)(_))
+      val ep3 = hexapod1.addEndpoint(new LocalEndpoint(Endpoint.Direction.InOut, new LocalEndpoint.Nature(UUID.randomUUID), 2)(_))
+      val ep4 = hexapod1.addEndpoint(new LocalEndpoint(Endpoint.Direction.InOut, new LocalEndpoint.Nature(UUID.randomUUID), 3)(_))
+      val ep5 = hexapod1.addEndpoint(new LocalEndpoint(Endpoint.Direction.InOut, new LocalEndpoint.Nature(UUID.randomUUID), 1)(_))
+      val ep6 = hexapod1.addEndpoint(new LocalEndpoint(Endpoint.Direction.InOut, new LocalEndpoint.Nature(UUID.randomUUID), 2)(_))
+      ep4.connect
+      ep5.connect
+      ep6.connect
+      ep1 should not be (ep2)
+      hexapod1.getEndpoints should be(Seq(ep4, ep6, ep5, ep1, ep3, ep2))
     }
   }
+
+  override def beforeAll(configMap: Map[String, Any]) { adjustLoggingBeforeAll(configMap) }
 }

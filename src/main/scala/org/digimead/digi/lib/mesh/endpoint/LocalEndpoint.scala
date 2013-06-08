@@ -25,9 +25,8 @@ import scala.collection.mutable.SynchronizedMap
 import scala.ref.WeakReference
 
 import org.digimead.digi.lib.aop.log
-import org.digimead.digi.lib.log.Loggable
+import org.digimead.digi.lib.log.api.Loggable
 import org.digimead.digi.lib.log.NDC
-import org.digimead.digi.lib.log.logger.RichLogger.rich2slf4j
 import org.digimead.digi.lib.mesh.Mesh
 import org.digimead.digi.lib.mesh.Mesh.mesh2implementation
 import org.digimead.digi.lib.mesh.message.Message

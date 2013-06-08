@@ -30,8 +30,7 @@ import org.digimead.digi.lib.DependencyInjection
 import org.digimead.digi.lib.aop.log
 import org.digimead.digi.lib.enc.DiffieHellman
 import org.digimead.digi.lib.enc.Simple
-import org.digimead.digi.lib.log.Loggable
-import org.digimead.digi.lib.log.logger.RichLogger.rich2slf4j
+import org.digimead.digi.lib.log.api.Loggable
 import org.digimead.digi.lib.mesh.Mesh
 import org.digimead.digi.lib.mesh.Mesh.mesh2implementation
 import org.digimead.digi.lib.mesh.endpoint.Endpoint
@@ -109,27 +108,17 @@ class Hexapod private[hexapod] (val uuid: UUID) extends Hexapod.Pub with Loggabl
   override def toString = "Hexapod[%08X]".format(uuid.hashCode())
 }
 
-object Hexapod extends DependencyInjection.PersistentInjectable with Loggable {
-  assert(org.digimead.digi.lib.mesh.isReady, "Mesh not ready, please build it first")
+object Hexapod extends Loggable {
+  //assert(org.digimead.digi.lib.mesh.isReady, "Mesh not ready, please build it first")
   type Pub = Publisher[Event]
   type Sub = Subscriber[Event, Pub]
-  implicit def hexapod2app(h: Hexapod.type): AppHexapod = h.applicationHexapod
-  implicit def bindingModule = DependencyInjection()
-  /** The Hexapod instance cache */
-  @volatile private var applicationHexapod = inject[AppHexapod]
+  implicit def hexapod2app(h: Hexapod.type): AppHexapod = h.inner
   Endpoint // start initialization if needed
 
   def apply(uuid: UUID): Hexapod = Mesh(uuid) getOrElse { new Hexapod(uuid) }
-  def inner() = applicationHexapod
+  def inner() = DI.applicationHexapod
   def recreateFromSignature(): Option[Hexapod] = {
     None
-  }
-
-  /*
-   * dependency injection
-   */
-  override def injectionAfter(newModule: BindingModule) {
-    applicationHexapod = inject[AppHexapod]
   }
 
   sealed trait Event
@@ -137,5 +126,12 @@ object Hexapod extends DependencyInjection.PersistentInjectable with Loggable {
     case class Connect[T <: Endpoint[_ <: Endpoint.Nature]](val endpoint: T) extends Event
     case class Disconnect[T <: Endpoint[_ <: Endpoint.Nature]](val endpoint: T) extends Event
     case class SetDiffieHellman(val hexapod: Hexapod) extends Event
+  }
+  /**
+   * Dependency injection routines
+   */
+  private object DI extends DependencyInjection.PersistentInjectable {
+    /** The Hexapod instance */
+    lazy val applicationHexapod = inject[AppHexapod]
   }
 }

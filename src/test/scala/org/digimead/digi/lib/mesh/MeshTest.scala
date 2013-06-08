@@ -20,10 +20,8 @@ package org.digimead.digi.lib.mesh
 
 import java.net.InetAddress
 import java.util.UUID
-
 import scala.collection.mutable.SynchronizedQueue
 import scala.ref.WeakReference
-
 import org.digimead.digi.lib.DependencyInjection
 import org.digimead.digi.lib.aop.log
 import org.digimead.digi.lib.mesh.Peer.peer2implementation
@@ -38,184 +36,179 @@ import org.digimead.digi.lib.mesh.hexapod.Hexapod.hexapod2app
 import org.digimead.digi.lib.mesh.message.DiffieHellman
 import org.digimead.digi.lib.mesh.message.Ping
 import org.digimead.lib.test.EventPublisher
-import org.digimead.lib.test.TestHelperLogging
-import org.digimead.lib.test.TestHelperMatchers
 import org.scalatest.BeforeAndAfter
-import org.scalatest.fixture.FunSuite
 import org.scalatest.matchers.ShouldMatchers
-
 import com.escalatesoft.subcut.inject.BindingModule
 import com.escalatesoft.subcut.inject.NewBindingModule
+import org.digimead.lib.test.MatcherHelper
+import org.scalatest.FunSuite
+import org.digimead.lib.test.LoggingHelper
+import org.digimead.digi.lib.log.api.Loggable
 
-class MeshTest_j1 extends FunSuite with ShouldMatchers with BeforeAndAfter with TestHelperLogging with TestHelperMatchers {
-  type FixtureParam = Map[String, Any]
-
-  override def withFixture(test: OneArgTest) {
-    DependencyInjection.get.foreach(_ => DependencyInjection.clear)
-    withLogging(test.configMap) {
-      test(test.configMap)
-    }
+class MeshTest_j1 extends FunSuite with ShouldMatchers with LoggingHelper with Loggable with MatcherHelper {
+  val custom = new NewBindingModule(module => {
+    module.bind[AppHexapod] toSingle { new AppHexapod(Common.node1UUID) }
+    lazy val communicationSingleton = DependencyInjection.makeInitOnce(implicit module => new MyCommunication)
+    module.bind[Communication.Interface] toModuleSingle { communicationSingleton(_) }
+    module.bind[Long] identifiedBy ("Mesh.Communication.DeliverTTL") toSingle { 1000L }
+  }) ~ org.digimead.digi.lib.mesh.default
+  after { adjustLoggingAfter }
+  before {
+    DependencyInjection(custom, false)
+    adjustLoggingBefore
   }
 
   test("node 1 ping") {
-    configMap =>
-      val events = new SynchronizedQueue[Any]
+    val events = new SynchronizedQueue[Any]
 
-      // init
-      val config = new NewBindingModule(module => {
-        module.bind[AppHexapod] toSingle { new AppHexapod(Common.node1UUID) }
-        lazy val communicationSingleton = DependencyInjection.makeInitOnce(implicit module => new MyCommunication)
-        module.bind[Communication.Interface] toModuleSingle { communicationSingleton(_) }
-        module.bind[Long] identifiedBy ("Mesh.Communication.DeliverTTL") toSingle { 1000L }
-      }) ~ org.digimead.digi.lib.mesh.default ~ defaultConfig(configMap)
-      DependencyInjection.set(config, { Mesh })
-      val localEndpointIn = new UDPEndpoint(new WeakReference(Hexapod.inner), Endpoint.Direction.In,
-        new UDPEndpoint.Nature(Some(InetAddress.getLocalHost()), Some(23456)))
-      val localEndpointOut = new UDPEndpoint(new WeakReference(Hexapod.inner), Endpoint.Direction.Out,
-        new UDPEndpoint.Nature())
+    // init
+    val localEndpointIn = new UDPEndpoint(new WeakReference(Hexapod.inner), Endpoint.Direction.In,
+      new UDPEndpoint.Nature(Some(InetAddress.getLocalHost()), Some(23456)))
+    val localEndpointOut = new UDPEndpoint(new WeakReference(Hexapod.inner), Endpoint.Direction.Out,
+      new UDPEndpoint.Nature())
 
-      // subscribe
-      Hexapod.subscribe(new Hexapod.Sub {
-        def notify(pub: Hexapod.Pub, event: Hexapod.Event) {
-          log.___glance("HE:" + event)
-          events += event
-        }
-      })
-      Communication.subscribe(new Communication.Sub {
-        def notify(pub: Communication.Pub, event: Communication.Event) {
-          log.___glance("CE:" + event)
-          events += event
-        }
-      })
+    // subscribe
+    Hexapod.subscribe(new Hexapod.Sub {
+      def notify(pub: Hexapod.Pub, event: Hexapod.Event) {
+        log.___glance("HE:" + event)
+        events += event
+      }
+    })
+    Communication.subscribe(new Communication.Sub {
+      def notify(pub: Communication.Pub, event: Communication.Event) {
+        log.___glance("CE:" + event)
+        events += event
+      }
+    })
 
-      val comm = Communication.inner.asInstanceOf[MyCommunication]
+    val comm = Communication.inner.asInstanceOf[MyCommunication]
 
-      comm.getBuffer should have size (0)
-      comm.getDeliverMessageCounter should have size (0)
-      comm.getGlobal should have size (2)
+    comm.getBuffer should have size (0)
+    comm.getDeliverMessageCounter should have size (0)
+    comm.getGlobal should have size (2)
 
-      // ping Hexapod -> None(someone at mesh)
-      Communication.push(Ping(Hexapod.uuid, None)(true))
+    // ping Hexapod -> None(someone at mesh)
+    Communication.push(Ping(Hexapod.uuid, None)(true))
 
-      expectDefined(events.dequeue) { case Communication.Event.Add(msg: Ping) => }
+    expectDefined(events.dequeue) { case Communication.Event.Add(msg: Ping) => }
 
-      comm.getBuffer should have size (1)
-      comm.getBuffer.forall(_._2.condition == Communication.Condition.Pending)
+    comm.getBuffer should have size (1)
+    comm.getBuffer.forall(_._2.condition == Communication.Condition.Pending)
 
-      comm.getDeliverMessageCounter.toString should be("Map(ping -> 0)")
+    comm.getDeliverMessageCounter.toString should be("Map(ping -> 0)")
 
-      log.___glance("CONNECT ENDPOINT")
-      localEndpointIn.connected should equal(false)
-      localEndpointOut.connected should equal(false)
+    log.___glance("CONNECT ENDPOINT")
+    localEndpointIn.connected should equal(false)
+    localEndpointOut.connected should equal(false)
 
-      events should have size (0)
+    events should have size (0)
 
-      Hexapod.connect()
-      localEndpointIn.connected should equal(true)
-      localEndpointOut.connected should equal(true)
-      log.___glance("ENDPOINT CONNECTED")
+    Hexapod.connect()
+    localEndpointIn.connected should equal(true)
+    localEndpointOut.connected should equal(true)
+    log.___glance("ENDPOINT CONNECTED")
 
-      expectDefined(events.dequeue) { case Hexapod.Event.Connect(ep: UDPEndpoint) => }
+    expectDefined(events.dequeue) { case Hexapod.Event.Connect(ep: UDPEndpoint) => }
 
-      expectDefined(events.dequeue) { case Hexapod.Event.Connect(ep: UDPEndpoint) => }
+    expectDefined(events.dequeue) { case Hexapod.Event.Connect(ep: UDPEndpoint) => }
 
-      events should have size (0)
+    events should have size (0)
 
-      log.___glance("ADD REMOTE PEER")
-      val remote = Hexapod(Common.node2UUID)
-      val remoteEndpointIn = new UDPRemoteEndpoint(new WeakReference(remote), Endpoint.Direction.In,
-        new UDPEndpoint.Nature(Some(InetAddress.getLocalHost()), Some(23457)))
-      Peer.add(remote)
+    log.___glance("ADD REMOTE PEER")
+    val remote = Hexapod(Common.node2UUID)
+    val remoteEndpointIn = new UDPRemoteEndpoint(new WeakReference(remote), Endpoint.Direction.In,
+      new UDPEndpoint.Nature(Some(InetAddress.getLocalHost()), Some(23457)))
+    Peer.add(remote)
 
-      expectDefined(events.dequeue) { case Communication.Event.Add(msg: DiffieHellman) => }
+    expectDefined(events.dequeue) { case Communication.Event.Add(msg: DiffieHellman) => }
 
-      expectDefined(events.dequeue) { case Communication.Event.Sent(msg: DiffieHellman) => }
+    expectDefined(events.dequeue) { case Communication.Event.Sent(msg: DiffieHellman) => }
 
-      comm.getBuffer(DiffieHellman.word).condition should be(Communication.Condition.Sent)
-      comm.getBuffer(DiffieHellman.word).counter should be(1)
+    comm.getBuffer(DiffieHellman.word).condition should be(Communication.Condition.Sent)
+    comm.getBuffer(DiffieHellman.word).counter should be(1)
 
-      events should have size (0)
-      log.___glance("REMOTE PEER ADDED")
+    events should have size (0)
+    log.___glance("REMOTE PEER ADDED")
 
-      /*
+    /*
        * FAIL(by timeout) TEST
        * shift 100ms
        */
-      Thread.sleep(100)
-      Communication.processMessages
-      events should have size (0)
+    Thread.sleep(100)
+    Communication.processMessages
+    events should have size (0)
 
-      /*
+    /*
        * 2n node 1s sleep
        */
-      Thread.sleep(1000)
-      Communication.processMessages
-      expectDefined(events.dequeue) { case Communication.Event.Sent(msg: DiffieHellman) => }
-      events should have size (0)
+    Thread.sleep(1000)
+    Communication.processMessages
+    expectDefined(events.dequeue) { case Communication.Event.Sent(msg: DiffieHellman) => }
+    events should have size (0)
 
-      /*
+    /*
        * 2n node 2s sleep
        */
-      Thread.sleep(1000)
-      Communication.processMessages
-      expectDefined(events.dequeue) { case Communication.Event.Sent(msg: DiffieHellman) => }
-      events should have size (0)
+    Thread.sleep(1000)
+    Communication.processMessages
+    expectDefined(events.dequeue) { case Communication.Event.Sent(msg: DiffieHellman) => }
+    events should have size (0)
 
-      /*
+    /*
        * 2n node 3s sleep
        */
-      Thread.sleep(1000)
-      Communication.processMessages
+    Thread.sleep(1000)
+    Communication.processMessages
 
-      expectDefined(events.dequeue) { case Communication.Event.Fail(msg: DiffieHellman) => }
+    expectDefined(events.dequeue) { case Communication.Event.Fail(msg: DiffieHellman) => }
 
-      expectDefined(events.dequeue) { case Communication.Event.Fail(msg: Ping) => }
+    expectDefined(events.dequeue) { case Communication.Event.Fail(msg: Ping) => }
 
-      events should have size (0)
-      comm.getBuffer should have size (0)
-      comm.getDeliverMessageCounter should have size (0)
+    events should have size (0)
+    comm.getBuffer should have size (0)
+    comm.getDeliverMessageCounter should have size (0)
 
-      /*
+    /*
        * SUCCESSFULL TEST
        */
-      Communication.push(Ping(Hexapod.uuid, None)(true))
-      Communication.processMessages
+    Communication.push(Ping(Hexapod.uuid, None)(true))
+    Communication.processMessages
 
-      expectDefined(events.dequeue) { case Communication.Event.Add(msg: Ping) => }
+    expectDefined(events.dequeue) { case Communication.Event.Add(msg: Ping) => }
 
-      expectDefined(events.dequeue) { case Communication.Event.Add(msg: DiffieHellman) => }
+    expectDefined(events.dequeue) { case Communication.Event.Add(msg: DiffieHellman) => }
 
-      expectDefined(events.dequeue) { case Communication.Event.Sent(msg: DiffieHellman) => }
+    expectDefined(events.dequeue) { case Communication.Event.Sent(msg: DiffieHellman) => }
 
-      events should have size (0)
+    events should have size (0)
 
-      Thread.sleep(1000)
-      Communication.processMessages
-      events.dequeueAll(_ => true) should have size (1)
+    Thread.sleep(1000)
+    Communication.processMessages
+    events.dequeueAll(_ => true) should have size (1)
 
-      // should be success
-      Thread.sleep(1000)
-      Communication.processMessages
-      events.dequeueAll(_ => true) should have size (1)
+    // should be success
+    Thread.sleep(1000)
+    Communication.processMessages
+    events.dequeueAll(_ => true) should have size (1)
 
-      // receive acknowledgement
-      expectDefined(comm.waitEvent(5000)) { case Some(Communication.Event.Delivered(message: DiffieHellman)) => }
+    // receive acknowledgement
+    expectDefined(comm.waitEvent(5000)) { case Some(Communication.Event.Delivered(message: DiffieHellman)) => }
 
-      // receive DiffieHellman response(event #1, update keys, trying to send all pending messages, that require encryption)
-      expectDefined(comm.nextEvent(5000)) { case Some(Communication.Event.Sent(message: Ping)) => }
+    // receive DiffieHellman response(event #1, update keys, trying to send all pending messages, that require encryption)
+    expectDefined(comm.nextEvent(5000)) { case Some(Communication.Event.Sent(message: Ping)) => }
 
-      // receive DiffieHellman response(event #2)
-      expectDefined(comm.nextEvent(5000)) { case Some(Communication.Event.Success(message: DiffieHellman)) => }
+    // receive DiffieHellman response(event #2)
+    expectDefined(comm.nextEvent(5000)) { case Some(Communication.Event.Success(message: DiffieHellman)) => }
 
-      // receive acknowledgement
-      expectDefined(comm.nextEvent(5000)) { case Some(Communication.Event.Delivered(message: Ping)) => }
+    // receive acknowledgement
+    expectDefined(comm.nextEvent(5000)) { case Some(Communication.Event.Delivered(message: Ping)) => }
 
-      // receive Ping response
-      expectDefined(comm.nextEvent(5000)) { case Some(Communication.Event.Success(message: Ping)) => }
+    // receive Ping response
+    expectDefined(comm.nextEvent(5000)) { case Some(Communication.Event.Success(message: Ping)) => }
 
-      comm.getBuffer should have size (0)
+    comm.getBuffer should have size (0)
 
-      Thread.sleep(1000)
+    Thread.sleep(1000)
   }
   class MyCommunication(implicit override val bindingModule: BindingModule) extends Communication with EventPublisher[Communication.Event] {
     def getBuffer = buffer
@@ -229,18 +222,21 @@ class MeshTest_j1 extends FunSuite with ShouldMatchers with BeforeAndAfter with 
   }
 }
 
-class MeshTest_j2 extends FunSuite with ShouldMatchers with BeforeAndAfter with TestHelperLogging with TestHelperMatchers {
-  type FixtureParam = Map[String, Any]
-
-  override def withFixture(test: OneArgTest) {
-    withLogging(test.configMap) {
-      test(test.configMap)
-    }
+class MeshTest_j2 extends FunSuite with ShouldMatchers with LoggingHelper with Loggable with MatcherHelper {
+  val custom = new NewBindingModule(module => {
+    module.bind[AppHexapod] toSingle { new AppHexapod(Common.node1UUID) }
+//    lazy val communicationSingleton = DependencyInjection.makeInitOnce(implicit module => new MyCommunication)
+//    module.bind[Communication.Interface] toModuleSingle { communicationSingleton(_) }
+    module.bind[Long] identifiedBy ("Mesh.Communication.DeliverTTL") toSingle { 1000L }
+  }) ~ org.digimead.digi.lib.mesh.default
+  after { adjustLoggingAfter }
+  before {
+    DependencyInjection(custom, false)
+    adjustLoggingBefore
   }
 
   test("node 2 pong") {
-    config =>
-      val events = new SynchronizedQueue[Any]
+    val events = new SynchronizedQueue[Any]
 
     /*      // init
       Mesh.init(new Mesh.DefaultInit)
