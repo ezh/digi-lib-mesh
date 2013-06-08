@@ -40,9 +40,9 @@ class UDPEndpointSpec extends FunSpec with ShouldMatchers with LoggingHelper wit
     it("should have (de)serialization via signature") {
       val ep = new UDPEndpoint(new WeakReference(null), Endpoint.Direction.In,
         new UDPEndpoint.Nature(Some(InetAddress.getLocalHost()), Some(12345)))
-      ep.nature.address should be("127.0.0.1:12345")
-      ep.nature.toString should be("udp://127.0.0.1:12345")
-      ep.signature should be("udp'127.0.0.1:12345'10'In'")
+      ep.nature.address should endWith(":12345")
+      ep.nature.toString should include regex ("udp://.*:12345")
+      ep.signature should include regex ("udp'.*:12345'10'In'")
       val serialized = ep.signature
       val epCopy = Endpoint.fromSignature(null, serialized)
       epCopy.get.nature.toString should be(ep.nature.toString)
